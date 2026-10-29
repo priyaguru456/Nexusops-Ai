@@ -1,15 +1,327 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [vector]
+}
+
+enum Role {
+  EMPLOYEE
+  MANAGER
+  ADMIN
+}
+
+enum RequestCategory {
+  IT
+  HR
+  FINANCE
+  FACILITIES
+  OTHER
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum RequestStatus {
+  DRAFT
+  SUBMITTED
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  DONE
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SKIPPED
+}
+
+enum DocVisibility {
+  ALL
+  DEPARTMENT
+  MANAGERS
+  ADMIN_ONLY
+}
+
+enum DocStatus {
+  UPLOADED
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
+}
+
+model Department {
+  id        String     @id @default(uuid())
+  name      String     @unique
+  users     User[]
+  documents Document[]
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(EMPLOYEE)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  managerId String?
+  manager   User?   @relation("ManagerReports", fields: [managerId], references: [id])
+  reports   User[]  @relation("ManagerReports")
+
+  refreshTokens RefreshToken[]
+  requests      WorkRequest[]  @relation("Requester")
+  tasksAssigned Task[]         @relation("Assignee")
+  tasksCreated  Task[]         @relation("AssignedBy")
+  approvalsMade ApprovalStep[]
+  documents     Document[]
+  chatSessions  ChatSession[]
+  notifications Notification[]
+  comments      Comment[]
+  auditLogs     AuditLog[]
+
+  @@index([role])
+  @@index([createdAt])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model WorkRequest {
+  id          String          @id @default(uuid())
+  title       String
+  description String
+  category    RequestCategory
+  priority    Priority        @default(MEDIUM)
+  status      RequestStatus   @default(DRAFT)
+  amount      Decimal?        @db.Decimal(12, 2)
+  dueDate     DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  requesterId String
+  requester   User   @relation("Requester", fields: [requesterId], references: [id])
+
+  attachments   RequestAttachment[]
+  tasks         Task[]
+  approvalSteps ApprovalStep[]
+
+  @@index([status])
+  @@index([requesterId])
+  @@index([createdAt])
+}
+
+model RequestAttachment {
+  id        String      @id @default(uuid())
+  requestId String
+  request   WorkRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  fileName  String
+  filePath  String
+  createdAt DateTime    @default(now())
+}
+
+model Task {
+  id          String     @id @default(uuid())
+  title       String
+  description String?
+  status      TaskStatus @default(TODO)
+  priority    Priority   @default(MEDIUM)
+  dueDate     DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  requestId String?
+  request   WorkRequest? @relation(fields: [requestId], references: [id])
+
+  assigneeId   String?
+  assignee     User?   @relation("Assignee", fields: [assigneeId], references: [id])
+  assignedById String?
+  assignedBy   User?   @relation("AssignedBy", fields: [assignedById], references: [id])
+
+  @@index([status])
+  @@index([assigneeId])
+  @@index([createdAt])
+}
+
+model Comment {
+  id         String   @id @default(uuid())
+  entityType String
+  entityId   String
+  body       String
+  createdAt  DateTime @default(now())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model ApprovalFlow {
+  id        String             @id @default(uuid())
+  name      String
+  category  RequestCategory
+  minAmount Decimal?           @db.Decimal(12, 2)
+  steps     ApprovalFlowStep[]
+}
+
+model ApprovalFlowStep {
+  id           String       @id @default(uuid())
+  flowId       String
+  flow         ApprovalFlow @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  stepOrder    Int
+  approverRole Role
+
+  @@unique([flowId, stepOrder])
+}
+
+model ApprovalStep {
+  id           String         @id @default(uuid())
+  requestId    String
+  request      WorkRequest    @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  stepOrder    Int
+  approverRole Role
+  approverId   String?
+  approver     User?          @relation(fields: [approverId], references: [id])
+  status       ApprovalStatus @default(PENDING)
+  comment      String?
+  decidedAt    DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@unique([requestId, stepOrder])
+  @@index([status])
+  @@index([approverId])
+  @@index([createdAt])
+}
+
+model Document {
+  id           String        @id @default(uuid())
+  title        String
+  fileName     String
+  filePath     String
+  mimeType     String
+  sizeBytes    Int
+  category     String?
+  visibility   DocVisibility @default(ALL)
+  status       DocStatus     @default(UPLOADED)
+  errorMessage String?
+  version      Int           @default(1)
+  createdAt    DateTime      @default(now())
+
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  uploadedById String
+  uploadedBy   User        @relation(fields: [uploadedById], references: [id])
+
+  chunks DocumentChunk[]
+
+  @@index([status])
+  @@index([uploadedById])
+  @@index([createdAt])
+}
+
+model DocumentChunk {
+  id         String                        @id @default(uuid())
+  documentId String
+  document   Document                      @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunkIndex Int
+  pageNumber Int?
+  content    String
+  tokenCount Int?
+  embedding  Unsupported("vector(1536)")?
+  createdAt  DateTime                      @default(now())
+
+  @@index([documentId])
+  @@index([createdAt])
+}
+
+model ChatSession {
+  id        String        @id @default(uuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String?
+  createdAt DateTime      @default(now())
+  messages  ChatMessage[]
+}
+
+model ChatMessage {
+  id         String      @id @default(uuid())
+  sessionId  String
+  session    ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role       ChatRole
+  content    String
+  citations  Json?
+  tokensUsed Int?
+  latencyMs  Int?
+  feedback   Int?
+  createdAt  DateTime    @default(now())
+
+  @@index([sessionId])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  message   String
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id])
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
 }
