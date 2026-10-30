@@ -1,4 +1,8 @@
-import { auditRepository, type CreateAuditLogData } from "./audit.repository";
+import {
+  auditRepository,
+  type CreateAuditLogData,
+  type AuditLogFilters,
+} from "./audit.repository";
 import { logger } from "../../lib/logger";
 
 export class AuditService {
@@ -8,6 +12,10 @@ export class AuditService {
     } catch (err) {
       logger.error(err, `Failed to write audit log for action: ${data.action}`);
     }
+  }
+
+  async getLogs(filters: AuditLogFilters) {
+    return auditRepository.findAll(filters);
   }
 }
 

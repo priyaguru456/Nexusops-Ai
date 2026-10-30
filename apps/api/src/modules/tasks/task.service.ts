@@ -7,6 +7,7 @@ import {
 } from "./task.repository";
 import { canTransitionTask } from "./task.state-machine";
 import { auditService } from "../audit/audit.service";
+import { notificationService } from "../notifications/notification.service";
 import { AppError } from "../../lib/errors";
 import type { AuthenticatedUser } from "../../types/express";
 
@@ -113,6 +114,15 @@ export class TaskService {
       },
     });
 
+    if (task.assigneeId && task.assigneeId !== user.id) {
+      await notificationService.notify({
+        userId: task.assigneeId,
+        type: "TASK_ASSIGNED",
+        message: `You were assigned to task "${task.title}"`,
+        link: "/tasks",
+      });
+    }
+
     return task;
   }
 
@@ -192,6 +202,15 @@ export class TaskService {
         assignedById: user.id,
       },
     });
+
+    if (assigneeId && assigneeId !== user.id) {
+      await notificationService.notify({
+        userId: assigneeId,
+        type: "TASK_ASSIGNED",
+        message: `You were assigned to task "${task.title}"`,
+        link: "/tasks",
+      });
+    }
 
     return updated;
   }

@@ -74,9 +74,11 @@ const envSchema = z.object({
   UPLOAD_DIR: coerceString("./uploads"),
   MAX_UPLOAD_MB: coerceNumber(20),
 
+  OPENAI_API_KEY: optionalString,
+  ANTHROPIC_API_KEY: optionalString,
   LLM_API_KEY: optionalString,
   EMBEDDING_API_KEY: optionalString,
-  LLM_MODEL: optionalString,
+  LLM_MODEL: coerceString("claude-3-5-sonnet-20241022"),
   EMBEDDING_MODEL: coerceString("text-embedding-3-small"),
   EMBEDDING_DIMENSIONS: coerceNumber(1536),
   RAG_TOP_K: coerceNumber(6),

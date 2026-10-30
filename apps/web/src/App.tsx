@@ -15,6 +15,9 @@ import { CreateRequestPage } from "./features/requests/CreateRequestPage";
 import { EditRequestPage } from "./features/requests/EditRequestPage";
 import { RequestDetailPage } from "./features/requests/RequestDetailPage";
 import { TasksPage } from "./features/tasks/TasksPage";
+import { ApprovalsInboxPage } from "./features/approvals/ApprovalsInboxPage";
+import { AuditLogPage } from "./features/admin/AuditLogPage";
+import { DocumentsPage } from "./features/documents/DocumentsPage";
 
 export default function App(): React.JSX.Element {
   return (
@@ -40,17 +43,9 @@ export default function App(): React.JSX.Element {
 
               {/* Tasks routes */}
               <Route path="/tasks" element={<TasksPage />} />
-            <Route
-              path="/documents"
-              element={
-                <ModulePlaceholder
-                  title="Knowledge Base"
-                  description="Upload company documents for AI vector search"
-                />
-              }
-            />
-            <Route
-              path="/ai"
+              <Route path="/documents" element={<DocumentsPage />} />
+              <Route
+                path="/ai"
               element={
                 <ModulePlaceholder
                   title="AI Document Assistant"
@@ -64,10 +59,7 @@ export default function App(): React.JSX.Element {
               path="/approvals"
               element={
                 <ProtectedRoute roles={["MANAGER", "ADMIN"]}>
-                  <ModulePlaceholder
-                    title="Approvals"
-                    description="Review and decide on pending workflow requests"
-                  />
+                  <ApprovalsInboxPage />
                 </ProtectedRoute>
               }
             />
@@ -99,10 +91,7 @@ export default function App(): React.JSX.Element {
               path="/admin/audit"
               element={
                 <ProtectedRoute roles={["ADMIN"]}>
-                  <ModulePlaceholder
-                    title="Audit Logs"
-                    description="Security, authentication, and administrative audit trails"
-                  />
+                  <AuditLogPage />
                 </ProtectedRoute>
               }
             />

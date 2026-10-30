@@ -45,6 +45,14 @@ export const requestDetailInclude = {
       stepOrder: true,
       approverRole: true,
       approverId: true,
+      approver: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+        },
+      },
       status: true,
       comment: true,
       decidedAt: true,

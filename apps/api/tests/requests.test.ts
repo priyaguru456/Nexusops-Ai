@@ -10,6 +10,7 @@ vi.mock("../src/lib/prisma", () => {
     prisma: {
       user: {
         findUnique: vi.fn(),
+        findMany: vi.fn().mockResolvedValue([]),
       },
       workRequest: {
         create: vi.fn(),
@@ -23,6 +24,17 @@ vi.mock("../src/lib/prisma", () => {
       },
       auditLog: {
         create: vi.fn(),
+      },
+      approvalFlow: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      approvalStep: {
+        createMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      notification: {
+        create: vi.fn().mockResolvedValue({}),
+        createMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
     },
   };

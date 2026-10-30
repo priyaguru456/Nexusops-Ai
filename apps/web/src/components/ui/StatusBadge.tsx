@@ -10,6 +10,9 @@ import {
   Ban,
   ListTodo,
   AlertOctagon,
+  UploadCloud,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
 import type { RequestStatus } from "../../types/requests";
 import type { TaskStatus } from "../../types/tasks";
@@ -111,6 +114,36 @@ export function StatusBadge({
       border: "border-emerald-200 dark:border-emerald-800",
       icon: CheckCheck,
     },
+
+    // Document Ingestion statuses
+    UPLOADED: {
+      label: "Uploaded",
+      bg: "bg-blue-50 dark:bg-blue-950/60",
+      text: "text-blue-700 dark:text-blue-300",
+      border: "border-blue-200 dark:border-blue-800",
+      icon: UploadCloud,
+    },
+    PROCESSING: {
+      label: "Processing",
+      bg: "bg-amber-50 dark:bg-amber-950/60",
+      text: "text-amber-700 dark:text-amber-300",
+      border: "border-amber-200 dark:border-amber-800",
+      icon: Loader2,
+    },
+    READY: {
+      label: "Ready",
+      bg: "bg-emerald-50 dark:bg-emerald-950/60",
+      text: "text-emerald-700 dark:text-emerald-300",
+      border: "border-emerald-200 dark:border-emerald-800",
+      icon: CheckCircle,
+    },
+    FAILED: {
+      label: "Failed",
+      bg: "bg-rose-50 dark:bg-rose-950/60",
+      text: "text-rose-700 dark:text-rose-300",
+      border: "border-rose-200 dark:border-rose-800",
+      icon: AlertCircle,
+    },
   };
 
   const config = configMap[normalized] || {
@@ -128,7 +161,11 @@ export function StatusBadge({
     <span
       className={`inline-flex items-center rounded-full border font-medium transition-colors ${config.bg} ${config.text} ${config.border} ${sizeClasses} ${className}`}
     >
-      <IconComponent className={size === "sm" ? "w-3 h-3" : "w-3.5 h-3.5"} />
+      <IconComponent
+        className={`${size === "sm" ? "w-3 h-3" : "w-3.5 h-3.5"} ${
+          normalized === "PROCESSING" ? "animate-spin" : ""
+        }`}
+      />
       <span>{config.label}</span>
     </span>
   );

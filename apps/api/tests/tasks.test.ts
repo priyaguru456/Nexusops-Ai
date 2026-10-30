@@ -21,6 +21,10 @@ vi.mock("../src/lib/prisma", () => {
       auditLog: {
         create: vi.fn(),
       },
+      notification: {
+        create: vi.fn().mockResolvedValue({}),
+        createMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
     },
   };
 });

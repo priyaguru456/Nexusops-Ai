@@ -2,6 +2,7 @@ import { Role, RequestStatus, Prisma } from "@prisma/client";
 import { requestRepository, type CreateRequestData, type UpdateRequestData, type RequestQueryFilters } from "./request.repository";
 import { canTransitionRequest } from "./request.state-machine";
 import { auditService } from "../audit/audit.service";
+import { approvalService } from "../approvals/approval.service";
 import { AppError } from "../../lib/errors";
 import type { AuthenticatedUser } from "../../types/express";
 
@@ -152,6 +153,13 @@ export class RequestService {
     }
 
     const updated = await requestRepository.updateStatus(id, RequestStatus.SUBMITTED);
+
+    await approvalService.initializeApprovalSteps(id, {
+      category: request.category,
+      amount: request.amount,
+      title: request.title,
+      requesterId: request.requesterId,
+    });
 
     await auditService.log({
       actorId: user.id,

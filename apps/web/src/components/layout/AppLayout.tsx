@@ -10,7 +10,6 @@ import {
   BarChart3,
   Users,
   Shield,
-  Bell,
   LogOut,
   Menu,
   X,
@@ -18,6 +17,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../features/auth/AuthContext";
 import { ThemeToggle } from "./ThemeToggle";
+import { NotificationBell } from "../../features/notifications/NotificationBell";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import type { Role } from "../../types/auth";
@@ -263,19 +263,8 @@ export const AppLayout: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Notification Bell Placeholder */}
-            <div className="relative">
-              <Button
-                variant="ghost"
-                size="icon"
-                title="Notifications"
-                aria-label="Notifications"
-                className="relative text-slate-600 dark:text-slate-400"
-              >
-                <Bell className="h-4 w-4" />
-                <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-indigo-600" />
-              </Button>
-            </div>
+            {/* Live Notification Bell */}
+            <NotificationBell />
 
             {/* Light / Dark Mode Toggle */}
             <ThemeToggle />

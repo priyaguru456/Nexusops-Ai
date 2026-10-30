@@ -31,6 +31,7 @@ import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { DetailSkeleton } from "../../components/ui/LoadingSkeleton";
 import { CommentThread } from "../comments/CommentThread";
 import { ActivityTimeline } from "./ActivityTimeline";
+import { ApprovalStepper } from "../approvals/ApprovalStepper";
 
 export function RequestDetailPage(): React.JSX.Element {
   const { id = "" } = useParams<{ id: string }>();
@@ -301,6 +302,14 @@ export function RequestDetailPage(): React.JSX.Element {
           )}
         </div>
       </div>
+
+      {/* Approval Workflow Progress Stepper (shown when submitted or in review/decided) */}
+      {request.status !== "DRAFT" && (
+        <ApprovalStepper
+          steps={request.approvalSteps}
+          currentStatus={request.status}
+        />
+      )}
 
       {/* Main Content Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
