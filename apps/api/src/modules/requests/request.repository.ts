@@ -143,10 +143,17 @@ export class RequestRepository {
     });
   }
 
-  async updateStatus(id: string, status: RequestStatus) {
+  async updateStatus(
+    id: string,
+    status: RequestStatus,
+    additionalData?: { submittedAt?: Date; completedAt?: Date }
+  ) {
     return prisma.workRequest.update({
       where: { id },
-      data: { status },
+      data: {
+        status,
+        ...additionalData,
+      },
       include: requestDetailInclude,
     });
   }

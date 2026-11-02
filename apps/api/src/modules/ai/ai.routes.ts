@@ -10,6 +10,7 @@ import {
   chatInputSchema,
   feedbackInputSchema,
   uuidParamSchema,
+  renameSessionSchema,
 } from "./ai.schema";
 
 export const aiRouter = Router();
@@ -46,6 +47,17 @@ aiRouter.get(
   authenticate,
   validate({ params: uuidParamSchema }),
   chatController.getSessionById
+);
+
+/**
+ * PATCH /api/ai/sessions/:id
+ * Rename a chat session.
+ */
+aiRouter.patch(
+  "/sessions/:id",
+  authenticate,
+  validate({ params: uuidParamSchema, body: renameSessionSchema }),
+  chatController.renameSession
 );
 
 /**

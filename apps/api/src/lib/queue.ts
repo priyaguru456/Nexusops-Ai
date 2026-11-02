@@ -4,9 +4,14 @@ import { env } from "../config/env";
 import { logger } from "./logger";
 
 export const DOCUMENT_QUEUE_NAME = "document-processing";
+export const ESCALATION_QUEUE_NAME = "approval-escalation";
 
 export interface DocumentJobData {
   documentId: string;
+}
+
+export interface EscalationJobData {
+  triggeredAt?: string;
 }
 
 /**
@@ -65,6 +70,39 @@ export function getDocumentQueue(): Queue<DocumentJobData> {
 export const documentQueue = new Proxy({} as Queue<DocumentJobData>, {
   get(_target, prop) {
     const queue = getDocumentQueue();
+    const val = (queue as any)[prop];
+    if (typeof val === "function") {
+      return val.bind(queue);
+    }
+    return val;
+  },
+});
+
+let _escalationQueue: Queue<EscalationJobData> | null = null;
+
+export function getEscalationQueue(): Queue<EscalationJobData> {
+  if (!_escalationQueue) {
+    _escalationQueue = new Queue<EscalationJobData>(ESCALATION_QUEUE_NAME, {
+      connection: createRedisConnection(),
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+          type: "exponential",
+          delay: 2000,
+        },
+        removeOnComplete: {
+          age: 24 * 3600,
+          count: 500,
+        },
+      },
+    });
+  }
+  return _escalationQueue;
+}
+
+export const escalationQueue = new Proxy({} as Queue<EscalationJobData>, {
+  get(_target, prop) {
+    const queue = getEscalationQueue();
     const val = (queue as any)[prop];
     if (typeof val === "function") {
       return val.bind(queue);

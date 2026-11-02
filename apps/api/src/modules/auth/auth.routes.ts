@@ -5,6 +5,10 @@ import { registerSchema, loginSchema } from "./auth.schema";
 import { authenticate } from "../../middleware/auth";
 import { loginRateLimiter } from "../../middleware/rateLimiter";
 
+import { userController } from "../users/user.controller";
+import { updateProfileSchema, changePasswordSchema } from "../users/user.schema";
+import { passwordChangeRateLimiter } from "../../middleware/rateLimiter";
+
 export const authRouter = Router();
 
 authRouter.post("/register", validate({ body: registerSchema }), (req, res, next) =>
@@ -20,3 +24,18 @@ authRouter.post("/refresh", (req, res, next) => authController.refresh(req, res,
 authRouter.post("/logout", (req, res, next) => authController.logout(req, res, next));
 
 authRouter.get("/me", authenticate, (req, res, next) => authController.getMe(req, res, next));
+
+authRouter.patch(
+  "/me",
+  authenticate,
+  validate({ body: updateProfileSchema }),
+  (req, res, next) => userController.updateProfile(req, res, next)
+);
+
+authRouter.post(
+  "/change-password",
+  authenticate,
+  passwordChangeRateLimiter,
+  validate({ body: changePasswordSchema }),
+  (req, res, next) => userController.changePassword(req, res, next)
+);

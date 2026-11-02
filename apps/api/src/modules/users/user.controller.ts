@@ -45,6 +45,42 @@ export class UserController {
       next(error);
     }
   }
+
+  /**
+   * PATCH /api/users/me (or /api/auth/me)
+   * Self profile update (strict name only).
+   */
+  async updateProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) {
+        throw AppError.unauthorized();
+      }
+      const updatedUser = await userService.updateProfile(req.user.id, req.body.name);
+      res.status(200).json({ user: updatedUser });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/users/me/password
+   * Self password change.
+   */
+  async changePassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) {
+        throw AppError.unauthorized();
+      }
+      const result = await userService.changePassword(
+        req.user.id,
+        req.body.currentPassword,
+        req.body.newPassword
+      );
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const userController = new UserController();

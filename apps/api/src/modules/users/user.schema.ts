@@ -32,6 +32,25 @@ export const getUsersQuerySchema = z.object({
   search: z.string().trim().optional(),
 });
 
+export const updateProfileSchema = z
+  .object({
+    name: z.string().trim().min(2, "Name must be at least 2 characters").max(100),
+  })
+  .strict();
+
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, "Current password is required"),
+    newPassword: z.string().min(8, "Password must be at least 8 characters"),
+  })
+  .strict()
+  .refine((data) => data.newPassword !== data.currentPassword, {
+    message: "New password must differ from the current password",
+    path: ["newPassword"],
+  });
+
 export type UpdateRoleInput = z.infer<typeof updateRoleSchema>;
 export type UpdateStatusInput = z.infer<typeof updateStatusSchema>;
 export type GetUsersQuery = z.infer<typeof getUsersQuerySchema>;
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;

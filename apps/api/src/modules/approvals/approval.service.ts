@@ -217,7 +217,12 @@ export class ApprovalService {
       const nextStep = siblingSteps.find((s) => s.stepOrder === step.stepOrder + 1);
 
       if (nextStep) {
-        // Next step is now active. Move request to IN_REVIEW if not already.
+        // Next step is now active. Set activatedAt and move request to IN_REVIEW if not already.
+        await tx.approvalStep.update({
+          where: { id: nextStep.id },
+          data: { activatedAt: new Date() },
+        });
+
         if (step.request.status !== RequestStatus.IN_REVIEW) {
           await tx.workRequest.update({
             where: { id: step.requestId },

@@ -152,7 +152,9 @@ export class RequestService {
       );
     }
 
-    const updated = await requestRepository.updateStatus(id, RequestStatus.SUBMITTED);
+    const updated = await requestRepository.updateStatus(id, RequestStatus.SUBMITTED, {
+      submittedAt: new Date(),
+    });
 
     await approvalService.initializeApprovalSteps(id, {
       category: request.category,
@@ -236,7 +238,8 @@ export class RequestService {
       );
     }
 
-    const updated = await requestRepository.updateStatus(id, targetStatus);
+    const additionalData = targetStatus === RequestStatus.COMPLETED ? { completedAt: new Date() } : undefined;
+    const updated = await requestRepository.updateStatus(id, targetStatus, additionalData);
 
     await auditService.log({
       actorId: user.id,

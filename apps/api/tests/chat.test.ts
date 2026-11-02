@@ -664,6 +664,25 @@ describe("AI Chat Module Tests (Task 9)", () => {
       expect(res.status).toBe(403);
     });
 
+    it("PATCH /api/ai/sessions/:id successfully renames own session", async () => {
+      const res = await request(app)
+        .patch(`/api/ai/sessions/${sessionUserAId}`)
+        .set("Authorization", `Bearer ${employeeSalesToken}`)
+        .send({ title: "Updated Policy Questions" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.session.title).toBe("Updated Policy Questions");
+    });
+
+    it("PATCH /api/ai/sessions/:id returns 403 Forbidden when renaming another user's session", async () => {
+      const res = await request(app)
+        .patch(`/api/ai/sessions/${sessionUserAId}`)
+        .set("Authorization", `Bearer ${employeeEngineeringToken}`)
+        .send({ title: "Hijacked Title" });
+
+      expect(res.status).toBe(403);
+    });
+
     it("POST /api/ai/chat returns 403 Forbidden when trying to continue another user's session", async () => {
       const res = await request(app)
         .post("/api/ai/chat")

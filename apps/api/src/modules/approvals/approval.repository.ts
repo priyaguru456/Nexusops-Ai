@@ -41,6 +41,7 @@ export class ApprovalRepository {
       stepOrder: s.stepOrder,
       approverRole: s.approverRole,
       status: ApprovalStatus.PENDING,
+      activatedAt: s.stepOrder === 1 ? new Date() : null,
     }));
 
     return client.approvalStep.createMany({

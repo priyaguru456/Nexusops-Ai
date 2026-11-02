@@ -30,3 +30,9 @@ export type FeedbackInput = z.infer<typeof feedbackInputSchema>;
 export const uuidParamSchema = z.object({
   id: z.string().uuid("Invalid ID format"),
 });
+
+export const renameSessionSchema = z.object({
+  title: z.string().trim().min(1, "Title is required").max(100, "Title cannot exceed 100 characters"),
+});
+
+export type RenameSessionInput = z.infer<typeof renameSessionSchema>;

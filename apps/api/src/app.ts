@@ -18,6 +18,8 @@ import { notificationRouter } from "./modules/notifications/notification.routes"
 import { auditRouter } from "./modules/audit/audit.routes";
 import { documentRouter } from "./modules/documents/document.routes";
 import { aiRouter } from "./modules/ai/ai.routes";
+import { analyticsRouter } from "./modules/analytics/analytics.routes";
+import { searchRouter } from "./modules/search/search.routes";
 
 export const app = express();
 
@@ -81,6 +83,8 @@ app.use("/api/notifications", notificationRouter);
 app.use("/api/audit-logs", auditRouter);
 app.use("/api/documents", documentRouter);
 app.use("/api/ai", aiRouter);
+app.use("/api/analytics", analyticsRouter);
+app.use("/api/search", searchRouter);
 
 app.use(notFound);
 app.use(errorHandler);

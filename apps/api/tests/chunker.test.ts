@@ -139,6 +139,40 @@ describe("Document Chunker & Text Cleaning Unit Tests", () => {
         expect(chunks[i].chunkIndex).toBe(i);
       }
     });
+
+    it("handles a single very long paragraph without newlines by splitting at sentence/word boundaries", () => {
+      const sentence = "The operational latency must remain bounded under strict SLA requirements. ";
+      const longSingleParagraph = sentence.repeat(50); // ~750 words in 1 contiguous paragraph
+
+      const pages: RawPageText[] = [{ pageNumber: 1, text: longSingleParagraph }];
+      const chunks = chunkDocument(documentId, pages, { targetTokens: 150, overlapTokens: 20 });
+
+      expect(chunks.length).toBeGreaterThan(1);
+      chunks.forEach((chunk, i) => {
+        expect(chunk.chunkIndex).toBe(i);
+        expect(chunk.pageNumber).toBe(1);
+        expect(chunk.tokenCount).toBeGreaterThan(0);
+        expect(chunk.tokenCount).toBeLessThanOrEqual(250);
+      });
+    });
+
+    it("correctly handles unicode, multilingual text and emojis without truncation or corruption", () => {
+      const unicodeText =
+        "NexusOps 支持多语言处理。 Système d'authentification sécurisé. \n\n" +
+        "प्रणाली संचालन और रिपोर्टिंग। 🚀 ✨ 🔒 Enterprise Grade AI. \n\n" +
+        "Übersicht über die Richtlinien für Urlaub und Abwesenheit. ¡Operaciones completadas con éxito!";
+
+      const pages: RawPageText[] = [{ pageNumber: 1, text: unicodeText }];
+      const chunks = chunkDocument(documentId, pages, { targetTokens: 400 });
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].content).toContain("NexusOps 支持多语言处理");
+      expect(chunks[0].content).toContain("Système d'authentification sécurisé");
+      expect(chunks[0].content).toContain("प्रणाली संचालन और रिपोर्टिंग");
+      expect(chunks[0].content).toContain("🚀 ✨ 🔒");
+      expect(chunks[0].content).toContain("Übersicht über die Richtlinien");
+      expect(chunks[0].content).toContain("¡Operaciones completadas con éxito!");
+    });
   });
 
   describe("cleanPages() and normalizeWhitespace()", () => {

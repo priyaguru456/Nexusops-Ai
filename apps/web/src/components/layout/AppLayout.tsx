@@ -14,10 +14,13 @@ import {
   Menu,
   X,
   ChevronDown,
+  Search,
+  Settings,
 } from "lucide-react";
 import { useAuth } from "../../features/auth/AuthContext";
 import { ThemeToggle } from "./ThemeToggle";
 import { NotificationBell } from "../../features/notifications/NotificationBell";
+import { GlobalSearchModal } from "./GlobalSearchModal";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import type { Role } from "../../types/auth";
@@ -70,7 +73,7 @@ const NAV_ITEMS: NavItem[] = [
     label: "Analytics",
     href: "/analytics",
     icon: BarChart3,
-    roles: ["MANAGER", "ADMIN"],
+    roles: ["EMPLOYEE", "MANAGER", "ADMIN"],
   },
   {
     label: "User Management",
@@ -84,6 +87,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: Shield,
     roles: ["ADMIN"],
   },
+  {
+    label: "Settings",
+    href: "/settings",
+    icon: Settings,
+    roles: ["EMPLOYEE", "MANAGER", "ADMIN"],
+  },
 ];
 
 export const AppLayout: React.FC = () => {
@@ -91,6 +100,19 @@ export const AppLayout: React.FC = () => {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
+
+  // Global keyboard shortcut for search (Ctrl+K / Cmd+K)
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchModalOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const visibleNavItems = NAV_ITEMS.filter((item) => (role ? item.roles.includes(role) : false));
 
@@ -126,6 +148,14 @@ export const AppLayout: React.FC = () => {
           <span className="font-bold text-lg text-slate-900 dark:text-white">NexusOps</span>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setSearchModalOpen(true)}
+            aria-label="Search"
+          >
+            <Search className="h-5 w-5" />
+          </Button>
           <ThemeToggle />
           <Button
             variant="ghost"
@@ -256,10 +286,24 @@ export const AppLayout: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Bar Desktop */}
         <header className="hidden md:flex items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm px-6 py-3 sticky top-0 z-30">
-          <div>
+          <div className="flex items-center gap-6">
             <h1 className="text-base font-semibold text-slate-800 dark:text-slate-200">
               NexusOps Platform
             </h1>
+
+            {/* Quick Search Trigger */}
+            <button
+              type="button"
+              onClick={() => setSearchModalOpen(true)}
+              className="flex items-center gap-3 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors w-72 text-xs font-normal cursor-pointer"
+              aria-label="Open search palette (Ctrl+K)"
+            >
+              <Search className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+              <span className="flex-1 text-left truncate">Search requests, tasks...</span>
+              <kbd className="text-[10px] bg-white dark:bg-slate-700 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 font-semibold text-slate-500 shrink-0">
+                Ctrl K
+              </kbd>
+            </button>
           </div>
 
           <div className="flex items-center gap-3">
@@ -306,7 +350,15 @@ export const AppLayout: React.FC = () => {
                         {user?.role}
                       </Badge>
                     </div>
-                    <div className="pt-1">
+                    <div className="pt-1 space-y-0.5">
+                      <Link
+                        to="/settings"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-850 rounded-lg cursor-pointer transition-colors"
+                      >
+                        <Settings className="h-3.5 w-3.5 text-slate-500" />
+                        Profile & Settings
+                      </Link>
                       <button
                         type="button"
                         onClick={() => {
@@ -331,6 +383,12 @@ export const AppLayout: React.FC = () => {
           <Outlet />
         </main>
       </div>
+
+      {/* Global Search Palette Modal (Ctrl+K) */}
+      <GlobalSearchModal
+        isOpen={searchModalOpen}
+        onClose={() => setSearchModalOpen(false)}
+      />
     </div>
   );
 };

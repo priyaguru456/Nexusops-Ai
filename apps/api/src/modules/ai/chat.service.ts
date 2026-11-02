@@ -143,6 +143,9 @@ export const chatService = {
           content: notFoundText,
           citations: [],
           tokensUsed: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          notFound: true,
           latencyMs,
         },
       });
@@ -210,6 +213,9 @@ export const chatService = {
         content: cleanedText,
         citations: citations as any,
         tokensUsed,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        notFound: false,
         latencyMs,
       },
     });
@@ -267,6 +273,29 @@ export const chatService = {
     }
 
     return session;
+  },
+
+  /**
+   * Renames a chat session.
+   * Enforces user ownership check.
+   */
+  async renameSession(sessionId: string, userId: string, title: string) {
+    const session = await prisma.chatSession.findUnique({
+      where: { id: sessionId },
+    });
+
+    if (!session) {
+      throw AppError.notFound("Chat session not found");
+    }
+
+    if (session.userId !== userId) {
+      throw AppError.forbidden("You do not have access to this chat session");
+    }
+
+    return prisma.chatSession.update({
+      where: { id: sessionId },
+      data: { title },
+    });
   },
 
   /**

@@ -222,20 +222,26 @@ export class AnthropicLLMProvider implements LLMProvider {
 export class MockLLMProvider implements LLMProvider {
   public readonly modelName = "mock-claude";
   private queuedResponses: string[] = [];
-  public defaultResponse: string = "According to company policy [1], operations follow standard protocols.";
+  public defaultResponse: string =
+    "According to company policy [1], operations follow standard protocols.";
   public usage: LLMUsage = { inputTokens: 80, outputTokens: 25 };
   public delayMs: number = 0;
+  public errorMidStream: boolean = false;
+  public midStreamErrorMessage: string = "LLM stream encountered a mid-stream failure";
 
   constructor(options?: {
     responses?: string[];
     defaultResponse?: string;
     usage?: LLMUsage;
     delayMs?: number;
+    errorMidStream?: boolean;
   }) {
     if (options?.responses) this.queuedResponses = [...options.responses];
     if (options?.defaultResponse) this.defaultResponse = options.defaultResponse;
     if (options?.usage) this.usage = options.usage;
     if (options?.delayMs !== undefined) this.delayMs = options.delayMs;
+    if (options?.errorMidStream !== undefined)
+      this.errorMidStream = options.errorMidStream;
   }
 
   enqueueResponse(response: string): void {
@@ -244,6 +250,33 @@ export class MockLLMProvider implements LLMProvider {
 
   clearQueue(): void {
     this.queuedResponses = [];
+    this.errorMidStream = false;
+    this.delayMs = 0;
+  }
+
+  setNormalAnswer(
+    answer: string = "According to company policy [1], operations follow standard protocols."
+  ): void {
+    this.defaultResponse = answer;
+    this.errorMidStream = false;
+  }
+
+  setFakeCitationAnswer(): void {
+    this.defaultResponse =
+      "According to section 4 [1] and phantom article [99], the workflow is verified.";
+    this.errorMidStream = false;
+  }
+
+  setErrorMidStream(
+    enabled: boolean = true,
+    errorMsg: string = "LLM stream encountered a mid-stream failure"
+  ): void {
+    this.errorMidStream = enabled;
+    this.midStreamErrorMessage = errorMsg;
+  }
+
+  setSlowStream(delayMs: number = 200): void {
+    this.delayMs = delayMs;
   }
 
   async stream(options: LLMGenerateOptions): Promise<LLMStreamResult> {
@@ -255,18 +288,28 @@ export class MockLLMProvider implements LLMProvider {
     const delay = this.delayMs;
     const usage = this.usage;
     const signal = options.signal;
+    const errorMidStream = this.errorMidStream;
+    const errorMsg = this.midStreamErrorMessage;
 
     // Split into token-sized word fragments to simulate true SSE token streaming
     const tokens = responseText.match(/(\S+\s*|\s+)/g) || [responseText];
 
     async function* generateText() {
+      let emittedCount = 0;
       for (const token of tokens) {
         if (signal?.aborted) break;
         if (delay > 0) {
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
         if (signal?.aborted) break;
+
         yield token;
+        emittedCount++;
+
+        // Trigger mid-stream error after emitting a token or two
+        if (errorMidStream && emittedCount >= 2) {
+          throw new Error(errorMsg);
+        }
       }
     }
 
@@ -278,7 +321,7 @@ export class MockLLMProvider implements LLMProvider {
 }
 
 let activeLLMProvider: LLMProvider =
-  env.NODE_ENV === "test" || !env.ANTHROPIC_API_KEY
+  env.LLM_PROVIDER === "mock" || env.NODE_ENV === "test" || !env.ANTHROPIC_API_KEY
     ? new MockLLMProvider()
     : new AnthropicLLMProvider();
 

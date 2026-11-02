@@ -119,6 +119,26 @@ export const chatController = {
   },
 
   /**
+   * PATCH /api/ai/sessions/:id
+   * Renames a chat session.
+   */
+  async renameSession(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) throw AppError.unauthorized();
+      const id = req.params.id as string;
+      const { title } = req.body;
+
+      const session = await chatService.renameSession(id, req.user.id, title);
+      res.status(200).json({
+        status: "success",
+        session,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
    * DELETE /api/ai/sessions/:id
    * Deletes a chat session and all messages within it.
    */

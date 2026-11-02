@@ -82,6 +82,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       login,
       register,
       logout,
+      updateUser: (updatedUser: User) => setUser(updatedUser),
+      refreshUser: async () => {
+        try {
+          const res = await api.get<{ user: User }>("/auth/me");
+          setUser(res.data.user);
+        } catch {
+          // Ignore
+        }
+      },
     }),
     [user, isLoading]
   );

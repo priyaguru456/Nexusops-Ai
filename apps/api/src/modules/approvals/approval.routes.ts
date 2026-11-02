@@ -16,17 +16,20 @@ approvalRouter.use(authenticate);
 
 approvalRouter.get(
   "/pending",
+  authorize(Role.MANAGER, Role.ADMIN),
   (req, res, next) => approvalController.getPendingApprovals(req, res, next)
 );
 
 approvalRouter.post(
   "/:stepId/approve",
+  authorize(Role.MANAGER, Role.ADMIN),
   validate({ params: stepIdParamSchema, body: approveStepSchema }),
   (req, res, next) => approvalController.approveStep(req, res, next)
 );
 
 approvalRouter.post(
   "/:stepId/reject",
+  authorize(Role.MANAGER, Role.ADMIN),
   validate({ params: stepIdParamSchema, body: rejectStepSchema }),
   (req, res, next) => approvalController.rejectStep(req, res, next)
 );

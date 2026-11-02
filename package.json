@@ -1,0 +1,15 @@
+{
+  "name": "nexusops-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NexusOps AI Enterprise Operations Platform",
+  "scripts": {
+    "test": "npm --prefix apps/api run test",
+    "test:unit": "npm --prefix apps/api run test:unit",
+    "test:integration": "npm --prefix apps/api run test:integration",
+    "test:coverage": "npm --prefix apps/api run test:coverage",
+    "test:web": "npm --prefix apps/web run test",
+    "test:web:coverage": "npm --prefix apps/web run test:coverage",
+    "test:e2e": "npm --prefix apps/web run test:e2e"
+  }
+}

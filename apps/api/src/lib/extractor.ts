@@ -12,6 +12,7 @@ import { logger } from "./logger";
  */
 export async function extractPdf(buffer: Buffer): Promise<RawPageText[]> {
   const pages: RawPageText[] = [];
+  const u8 = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
 
   const customPagerender = async (pageData: any): Promise<string> => {
     try {
@@ -42,14 +43,18 @@ export async function extractPdf(buffer: Buffer): Promise<RawPageText[]> {
   };
 
   try {
-    await pdfParse(buffer, { pagerender: customPagerender });
+    await pdfParse(u8, { pagerender: customPagerender });
   } catch (err) {
     logger.error({ err }, "Failed to extract PDF text with customPagerender");
     // Fallback if custom pagerender fails
     if (pages.length === 0) {
-      const fallback = await pdfParse(buffer);
-      if (fallback.text) {
-        pages.push({ pageNumber: 1, text: fallback.text });
+      try {
+        const fallback = await pdfParse(u8);
+        if (fallback.text) {
+          pages.push({ pageNumber: 1, text: fallback.text });
+        }
+      } catch (fallbackErr) {
+        logger.error({ fallbackErr }, "Fallback pdfParse also failed");
       }
     }
   }

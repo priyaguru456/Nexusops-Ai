@@ -1,61 +1,82 @@
 import { describe, it, expect } from "vitest";
-import request from "supertest";
-import express from "express";
 import { z } from "zod";
 import { AppError } from "../src/lib/errors";
 import { notFound, errorHandler } from "../src/middleware/errorHandler";
+import type { Request, Response, NextFunction } from "express";
 
-const createTestApp = () => {
-  const testApp = express();
-  testApp.use(express.json());
-
-  testApp.get("/test/custom-error", () => {
-    throw AppError.badRequest("Invalid input parameters", { field: "name" });
-  });
-
-  testApp.get("/test/zod-error", () => {
-    const schema = z.object({ email: z.string().email() });
-    schema.parse({ email: "not-an-email" });
-  });
-
-  testApp.get("/test/unauthorized", () => {
-    throw AppError.unauthorized();
-  });
-
-  testApp.use(notFound);
-  testApp.use(errorHandler);
-
-  return testApp;
+const createMockResponse = () => {
+  const res: Partial<Response> & { statusCode?: number; body?: unknown } = {};
+  res.status = (code: number) => {
+    res.statusCode = code;
+    return res as Response;
+  };
+  res.json = (data: unknown) => {
+    res.body = data;
+    return res as Response;
+  };
+  return res as Response & { statusCode: number; body: Record<string, unknown> };
 };
 
 describe("Centralized Error Handler & AppError", () => {
-  const testApp = createTestApp();
+  it("handles AppError with status code and details", () => {
+    const err = AppError.badRequest("Invalid input parameters", { field: "name" });
+    const res = createMockResponse();
+    const req = {} as Request;
+    const next = (() => {}) as NextFunction;
 
-  it("handles AppError with status code and details", async () => {
-    const res = await request(testApp).get("/test/custom-error");
-    expect(res.status).toBe(400);
+    errorHandler(err, req, res, next);
+
+    expect(res.statusCode).toBe(400);
     expect(res.body).toEqual({
       error: "Invalid input parameters",
       details: { field: "name" },
     });
   });
 
-  it("handles AppError unauthorized with 401", async () => {
-    const res = await request(testApp).get("/test/unauthorized");
-    expect(res.status).toBe(401);
+  it("handles AppError unauthorized with 401", () => {
+    const err = AppError.unauthorized();
+    const res = createMockResponse();
+    const req = {} as Request;
+    const next = (() => {}) as NextFunction;
+
+    errorHandler(err, req, res, next);
+
+    expect(res.statusCode).toBe(401);
     expect(res.body.error).toBe("Unauthorized");
   });
 
-  it("formats Zod validation errors as 400 with field errors", async () => {
-    const res = await request(testApp).get("/test/zod-error");
-    expect(res.status).toBe(400);
+  it("formats Zod validation errors as 400 with field errors", () => {
+    let zodErr: unknown;
+    try {
+      const schema = z.object({ email: z.string().email() });
+      schema.parse({ email: "not-an-email" });
+    } catch (e) {
+      zodErr = e;
+    }
+
+    const res = createMockResponse();
+    const req = {} as Request;
+    const next = (() => {}) as NextFunction;
+
+    errorHandler(zodErr, req, res, next);
+
+    expect(res.statusCode).toBe(400);
     expect(res.body.error).toBe("Validation failed");
-    expect(res.body.details.fieldErrors.email).toBeDefined();
+    expect((res.body.details as { fieldErrors: Record<string, unknown> }).fieldErrors.email).toBeDefined();
   });
 
-  it("returns 404 for nonexistent routes via notFound middleware", async () => {
-    const res = await request(testApp).get("/nonexistent-endpoint");
-    expect(res.status).toBe(404);
+  it("returns 404 for nonexistent routes via notFound middleware", () => {
+    const req = { method: "GET", originalUrl: "/nonexistent-endpoint" } as Request;
+    const res = createMockResponse();
+    let forwardErr: unknown;
+    const next = ((err: unknown) => {
+      forwardErr = err;
+    }) as NextFunction;
+
+    notFound(req, res, next);
+    errorHandler(forwardErr, req, res, next);
+
+    expect(res.statusCode).toBe(404);
     expect(res.body.error).toContain("Cannot GET /nonexistent-endpoint");
   });
 });

@@ -52,6 +52,7 @@ export interface UpdateTaskData {
   priority?: Priority;
   status?: TaskStatus;
   dueDate?: Date | null;
+  completedAt?: Date | null;
 }
 
 export interface TaskQueryFilters {
@@ -97,6 +98,7 @@ export class TaskRepository {
     if (data.priority !== undefined) updatePayload.priority = data.priority;
     if (data.status !== undefined) updatePayload.status = data.status;
     if (data.dueDate !== undefined) updatePayload.dueDate = data.dueDate;
+    if (data.completedAt !== undefined) updatePayload.completedAt = data.completedAt;
 
     return prisma.task.update({
       where: { id },

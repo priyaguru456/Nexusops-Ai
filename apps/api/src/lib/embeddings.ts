@@ -215,7 +215,10 @@ export function formatVectorForPg(vector: number[]): string {
   return `[${vector.join(",")}]`;
 }
 
-let activeEmbeddingsProvider: EmbeddingsProvider = new OpenAIEmbeddingsProvider();
+let activeEmbeddingsProvider: EmbeddingsProvider =
+  env.EMBEDDINGS_PROVIDER === "mock" || env.NODE_ENV === "test" || !env.OPENAI_API_KEY
+    ? new MockEmbeddingsProvider()
+    : new OpenAIEmbeddingsProvider();
 
 export function getEmbeddingsProvider(): EmbeddingsProvider {
   return activeEmbeddingsProvider;

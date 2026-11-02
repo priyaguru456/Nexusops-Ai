@@ -53,8 +53,12 @@ const envSchema = z.object({
     "postgresql://postgres:postgres@localhost:5432/nexusops_ai_test?schema=public",
     "DATABASE_URL is required"
   ),
+  DATABASE_URL_TEST: optionalString,
   DIRECT_URL: optionalString,
   REDIS_URL: coerceString("redis://localhost:6379"),
+
+  LLM_PROVIDER: z.enum(["anthropic", "mock"]).default("anthropic"),
+  EMBEDDINGS_PROVIDER: z.enum(["openai", "mock"]).default("openai"),
 
   JWT_ACCESS_SECRET: requiredInNonTest(
     32,
@@ -83,6 +87,10 @@ const envSchema = z.object({
   EMBEDDING_DIMENSIONS: coerceNumber(1536),
   RAG_TOP_K: coerceNumber(6),
   SIMILARITY_THRESHOLD: coerceNumber(0.3),
+  LLM_INPUT_PRICE_PER_MTOK: coerceNumber(3.0),
+  LLM_OUTPUT_PRICE_PER_MTOK: coerceNumber(15.0),
+  ESCALATION_AFTER_HOURS: coerceNumber(72),
+  ESCALATION_CHECK_INTERVAL_MINUTES: coerceNumber(60),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -97,6 +105,15 @@ if (!parsed.success) {
 }
 
 const rawEnv = parsed.data;
+
+if (rawEnv.NODE_ENV === "production") {
+  if (rawEnv.LLM_PROVIDER === "mock" || rawEnv.EMBEDDINGS_PROVIDER === "mock") {
+    console.error(
+      "FATAL: Application refuses to start with mock LLM or Embeddings provider when NODE_ENV=production."
+    );
+    process.exit(1);
+  }
+}
 
 const parsedOrigins = Array.from(
   new Set([

@@ -42,6 +42,37 @@ const processQueue = (error: unknown, token: string | null = null) => {
 };
 
 const baseURL = import.meta.env.VITE_API_URL ?? "/api";
+export { baseURL };
+
+export const refreshAccessToken = async (): Promise<string | null> => {
+  if (isRefreshing) {
+    return new Promise((resolve, reject) => {
+      failedQueue.push({
+        resolve: (token) => resolve(token),
+        reject: (err) => reject(err),
+      });
+    });
+  }
+
+  isRefreshing = true;
+  try {
+    const refreshResponse = await axios.post<{ accessToken: string }>(
+      `${baseURL}/auth/refresh`,
+      {},
+      { withCredentials: true }
+    );
+    const newAccessToken = refreshResponse.data.accessToken;
+    setAccessToken(newAccessToken);
+    processQueue(null, newAccessToken);
+    return newAccessToken;
+  } catch (refreshError) {
+    processQueue(refreshError, null);
+    notifyAuthFailure();
+    return null;
+  } finally {
+    isRefreshing = false;
+  }
+};
 
 export const api = axios.create({
   baseURL,
@@ -72,45 +103,15 @@ api.interceptors.response.use(
 
     // Only attempt refresh on 401 for non-auth requests and if not previously retried
     if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          failedQueue.push({
-            resolve: (token) => {
-              if (token) {
-                originalRequest.headers.Authorization = `Bearer ${token}`;
-              }
-              resolve(api(originalRequest));
-            },
-            reject: (err) => {
-              reject(err);
-            },
-          });
-        });
-      }
-
       originalRequest._retry = true;
-      isRefreshing = true;
-
       try {
-        const refreshResponse = await axios.post<{ accessToken: string }>(
-          `${baseURL}/auth/refresh`,
-          {},
-          { withCredentials: true }
-        );
-
-        const newAccessToken = refreshResponse.data.accessToken;
-        setAccessToken(newAccessToken);
-
-        processQueue(null, newAccessToken);
-        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
-
-        return api(originalRequest);
-      } catch (refreshError) {
-        processQueue(refreshError, null);
-        notifyAuthFailure();
-        return Promise.reject(refreshError);
-      } finally {
-        isRefreshing = false;
+        const newAccessToken = await refreshAccessToken();
+        if (newAccessToken) {
+          originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+          return api(originalRequest);
+        }
+      } catch (refreshErr) {
+        return Promise.reject(refreshErr);
       }
     }
 

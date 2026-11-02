@@ -156,6 +156,9 @@ export class TaskService {
           `Illegal status transition from ${task.status} to ${data.status}`
         );
       }
+      if (data.status === TaskStatus.DONE && !data.completedAt) {
+        data.completedAt = new Date();
+      }
     }
 
     const updated = await taskRepository.update(id, data);
