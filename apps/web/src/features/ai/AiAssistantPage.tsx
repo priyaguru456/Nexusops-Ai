@@ -10,10 +10,14 @@ import { SessionSidebar } from "./SessionSidebar";
 import { ChatMessageItem } from "./ChatMessageItem";
 import { ChatInputArea } from "./ChatInputArea";
 import { CitationsPanel } from "./CitationsPanel";
+import { CitationModal } from "./CitationModal";
 import { EmptyChatState } from "./EmptyChatState";
 import { aiApi } from "./api";
+import { documentsApi } from "../documents/api";
 import { toast } from "../../components/ui/toast";
+import { BackButton } from "../../components/ui/BackButton";
 import type { ChatSession, ChatMessage, Citation, DoneEvent } from "../../types/ai";
+import type { DocumentItem } from "../../types/documents";
 
 export const AiAssistantPage: React.FC = () => {
   // Sessions state
@@ -28,10 +32,15 @@ export const AiAssistantPage: React.FC = () => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Citations panel state
+  // Citations panel & modal state
   const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null);
   const [activeMessageCitations, setActiveMessageCitations] = useState<Citation[]>([]);
   const [isCitationsPanelOpen, setIsCitationsPanelOpen] = useState(false);
+  const [isCitationModalOpen, setIsCitationModalOpen] = useState(false);
+
+  // Real READY documents state for starter chips
+  const [readyDocs, setReadyDocs] = useState<DocumentItem[]>([]);
+  const [isLoadingDocs, setIsLoadingDocs] = useState(false);
 
   // Layout sidebar visibility
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -72,9 +81,23 @@ export const AiAssistantPage: React.FC = () => {
     }
   }, []);
 
+  // Fetch real READY documents (max 4) for starter chips
+  const loadReadyDocs = useCallback(async () => {
+    try {
+      setIsLoadingDocs(true);
+      const res = await documentsApi.getDocuments({ status: "READY", limit: 4 });
+      setReadyDocs(res?.documents || []);
+    } catch {
+      setReadyDocs([]);
+    } finally {
+      setIsLoadingDocs(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadSessions();
-  }, [loadSessions]);
+    loadReadyDocs();
+  }, [loadSessions, loadReadyDocs]);
 
   // Load messages when active session changes
   const loadSessionMessages = useCallback(async (sessionId: string) => {
@@ -192,10 +215,32 @@ export const AiAssistantPage: React.FC = () => {
     }
   };
 
-  // Open citation in Citations panel
+  // Open citation in Citation Modal
   const handleSelectCitation = (citation: Citation) => {
     setSelectedCitation(citation);
-    setIsCitationsPanelOpen(true);
+    setIsCitationModalOpen(true);
+  };
+
+  // Regenerate response for an assistant message
+  const handleRegenerate = (assistantMessageId: string) => {
+    if (isStreaming) return;
+
+    // Find the assistant message index
+    const assistantIndex = messages.findIndex((m) => m.id === assistantMessageId);
+    if (assistantIndex === -1) return;
+
+    // Find the preceding user message
+    let precedingUserPrompt = "";
+    for (let i = assistantIndex - 1; i >= 0; i--) {
+      if (messages[i].role === "user" || messages[i].role === "USER") {
+        precedingUserPrompt = messages[i].content;
+        break;
+      }
+    }
+
+    if (precedingUserPrompt) {
+      handleSendMessage(precedingUserPrompt);
+    }
   };
 
   // Send message and stream answer
@@ -374,6 +419,8 @@ export const AiAssistantPage: React.FC = () => {
         {/* Chat Area Top Bar */}
         <header className="h-14 px-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xs z-10">
           <div className="flex items-center gap-3 min-w-0">
+            <BackButton />
+
             {!isSidebarOpen && (
               <button
                 type="button"
@@ -403,11 +450,11 @@ export const AiAssistantPage: React.FC = () => {
 
           {/* Right Toolbar Controls */}
           <div className="flex items-center gap-2">
-            {selectedCitation && !isCitationsPanelOpen && (
+            {selectedCitation && !isCitationModalOpen && (
               <button
                 type="button"
-                onClick={() => setIsCitationsPanelOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900 transition-colors"
+                onClick={() => setIsCitationModalOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900 transition-colors cursor-pointer"
                 title="View document citation"
               >
                 <PanelRightOpen className="w-4 h-4" />
@@ -440,7 +487,11 @@ export const AiAssistantPage: React.FC = () => {
               <span className="text-sm">Loading conversation...</span>
             </div>
           ) : messages.length === 0 ? (
-            <EmptyChatState onSelectSuggestion={(q) => handleSendMessage(q)} />
+            <EmptyChatState
+              readyDocs={readyDocs}
+              isLoadingDocs={isLoadingDocs}
+              onSelectSuggestion={(q) => handleSendMessage(q)}
+            />
           ) : (
             <div className="max-w-4xl mx-auto space-y-3">
               {messages.map((message) => (
@@ -450,6 +501,7 @@ export const AiAssistantPage: React.FC = () => {
                   isStreamingActive={isStreaming}
                   onSelectCitation={handleSelectCitation}
                   onFeedback={handleFeedback}
+                  onRegenerate={handleRegenerate}
                 />
               ))}
               <div ref={messagesEndRef} className="h-2" />
@@ -467,10 +519,22 @@ export const AiAssistantPage: React.FC = () => {
           disabled={isLoadingMessages}
           errorMessage={errorMessage}
           onClearError={() => setErrorMessage(null)}
+          starterDocs={readyDocs}
+          isLoadingDocs={isLoadingDocs}
+          onSelectPrompt={(prompt) => handleSendMessage(prompt)}
         />
       </main>
 
-      {/* Citations Side Panel */}
+      {/* Citation Modal */}
+      <CitationModal
+        isOpen={isCitationModalOpen}
+        citation={selectedCitation}
+        allCitations={activeMessageCitations}
+        onSelectCitation={(c) => setSelectedCitation(c)}
+        onClose={() => setIsCitationModalOpen(false)}
+      />
+
+      {/* Citations Side Panel (optional expanded view) */}
       <CitationsPanel
         isOpen={isCitationsPanelOpen}
         citation={selectedCitation}

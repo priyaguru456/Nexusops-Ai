@@ -7,6 +7,7 @@ import { documentQueue } from "../../lib/queue";
 import { documentRepository } from "./document.repository";
 import { UploadDocumentMetadataInput, GetDocumentsQuery } from "./document.schema";
 import { logger } from "../../lib/logger";
+import { auditService } from "../audit/audit.service";
 
 const ALLOWED_EXTENSIONS = new Set([".pdf", ".docx", ".doc", ".txt", ".md"]);
 
@@ -147,26 +148,44 @@ export const documentService = {
   async list(query: GetDocumentsQuery, user: AuthenticatedUser) {
     const visibilityFilter = buildVisibilityFilter(user);
 
-    const where: Prisma.DocumentWhereInput = {
-      AND: [
-        visibilityFilter,
-        query.search
-          ? {
-              OR: [
-                { title: { contains: query.search, mode: "insensitive" } },
-                { fileName: { contains: query.search, mode: "insensitive" } },
-              ],
-            }
-          : {},
-        query.category ? { category: query.category } : {},
-        query.status ? { status: query.status } : {},
-        query.visibility ? { visibility: query.visibility } : {},
-      ],
-    };
+    const conditions: Prisma.DocumentWhereInput[] = [];
 
-    const skip = (query.page - 1) * query.limit;
-    const take = query.limit;
-    const orderBy = { [query.sortBy]: query.sortOrder };
+    if (Object.keys(visibilityFilter).length > 0) {
+      conditions.push(visibilityFilter);
+    }
+
+    if (query.search?.trim()) {
+      conditions.push({
+        OR: [
+          { title: { contains: query.search.trim(), mode: "insensitive" } },
+          { fileName: { contains: query.search.trim(), mode: "insensitive" } },
+        ],
+      });
+    }
+
+    if (query.category?.trim()) {
+      conditions.push({ category: query.category.trim() });
+    }
+
+    if (query.status) {
+      conditions.push({ status: query.status });
+    }
+
+    if (query.visibility) {
+      conditions.push({ visibility: query.visibility });
+    }
+
+    const where: Prisma.DocumentWhereInput = conditions.length > 0 ? { AND: conditions } : {};
+
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(query.limit) || 20));
+    const skip = (page - 1) * limit;
+    const take = limit;
+
+    const allowedSortFields = ["createdAt", "title", "status", "sizeBytes", "version"] as const;
+    const sortBy = allowedSortFields.includes(query.sortBy as any) ? query.sortBy : "createdAt";
+    const sortOrder = query.sortOrder === "asc" ? "asc" : "desc";
+    const orderBy = { [sortBy]: sortOrder };
 
     const [documents, total] = await Promise.all([
       documentRepository.findMany(where, { skip, take, orderBy }),
@@ -176,10 +195,10 @@ export const documentService = {
     return {
       documents,
       pagination: {
-        page: query.page,
-        limit: query.limit,
+        page,
+        limit,
         total,
-        totalPages: Math.ceil(total / query.limit),
+        totalPages: Math.max(1, Math.ceil(total / limit)),
       },
     };
   },
@@ -242,6 +261,18 @@ export const documentService = {
     } catch (queueErr) {
       logger.error({ queueErr, documentId: id }, "Failed to enqueue reprocess job");
     }
+
+    // Record audit log for important state change
+    await auditService.log({
+      actorId: user.id,
+      action: "DOCUMENT_RETRY_EMBEDDING",
+      entityType: "Document",
+      entityId: id,
+      metadata: {
+        title: doc.title,
+        previousStatus: doc.status,
+      },
+    });
 
     return updated;
   },

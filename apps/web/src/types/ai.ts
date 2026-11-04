@@ -2,6 +2,7 @@ export interface Citation {
   documentId: string;
   documentTitle: string;
   pageNumber: number | null;
+  chunkIndex?: number | null;
   snippet: string;
 }
 

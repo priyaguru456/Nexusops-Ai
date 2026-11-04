@@ -4,6 +4,7 @@ import type {
   RequestQueryFilters,
   PaginatedRequestsResponse,
   ActivityHistoryItem,
+  RequestStatusCounts,
 } from "../../types/requests";
 
 export async function fetchRequests(filters: RequestQueryFilters): Promise<PaginatedRequestsResponse> {
@@ -84,4 +85,9 @@ export async function uploadRequestAttachment(id: string, file: File): Promise<v
       "Content-Type": "multipart/form-data",
     },
   });
+}
+
+export async function fetchRequestCounts(): Promise<RequestStatusCounts> {
+  const res = await api.get<{ counts: RequestStatusCounts }>("/requests/counts");
+  return res.data.counts;
 }

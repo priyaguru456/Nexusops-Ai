@@ -15,13 +15,21 @@ export const validate = (schemas: RequestValidationSchemas) => {
       }
       if (schemas.query) {
         const parsed = await schemas.query.parseAsync(req.query);
-        const queryObj = req.query as Record<string, unknown>;
-        Object.keys(queryObj).forEach((k) => delete queryObj[k]);
-        Object.assign(queryObj, parsed);
+        Object.defineProperty(req, "query", {
+          value: parsed,
+          writable: true,
+          configurable: true,
+          enumerable: true,
+        });
       }
       if (schemas.params) {
         const parsed = await schemas.params.parseAsync(req.params);
-        Object.assign(req.params, parsed);
+        Object.defineProperty(req, "params", {
+          value: parsed,
+          writable: true,
+          configurable: true,
+          enumerable: true,
+        });
       }
       next();
     } catch (error) {

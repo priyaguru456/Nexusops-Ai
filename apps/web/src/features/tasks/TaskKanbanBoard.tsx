@@ -1,6 +1,8 @@
 import React, { useState } from "react";
-import { Calendar } from "lucide-react";
 import { PriorityBadge } from "../../components/ui/PriorityBadge";
+import { DueDateBadge } from "./DueDateBadge";
+import { ChecklistBadge } from "./ChecklistBadge";
+import { PRIORITY_BORDER_MAP } from "./taskUtils";
 import type { TaskItem, TaskStatus } from "../../types/tasks";
 
 interface TaskKanbanBoardProps {
@@ -126,25 +128,17 @@ export function TaskKanbanBoard({
                     onDragEnd={handleDragEnd}
                     onClick={() => onTaskClick?.(task)}
                     className={`group p-4 rounded-xl border bg-white dark:bg-slate-900 shadow-xs hover:shadow-md transition-all duration-200 cursor-grab active:cursor-grabbing ${
+                      PRIORITY_BORDER_MAP[task.priority] || ""
+                    } ${
                       isDragging
                         ? "opacity-40 border-dashed border-indigo-400"
                         : "border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-slate-700"
                     }`}
                   >
-                    {/* Header: Priority & ID */}
-                    <div className="flex items-center justify-between gap-2 mb-2">
+                    {/* Header: Priority & Due Date */}
+                    <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
                       <PriorityBadge priority={task.priority} />
-                      {task.dueDate && (
-                        <div className="flex items-center gap-1 text-[11px] text-slate-400">
-                          <Calendar className="w-3 h-3" />
-                          <span>
-                            {new Date(task.dueDate).toLocaleDateString(undefined, {
-                              month: "short",
-                              day: "numeric",
-                            })}
-                          </span>
-                        </div>
-                      )}
+                      <DueDateBadge dueDate={task.dueDate} status={task.status} />
                     </div>
 
                     {/* Task Title */}
@@ -154,10 +148,15 @@ export function TaskKanbanBoard({
 
                     {/* Task Description */}
                     {task.description && (
-                      <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 mb-3">
+                      <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 mb-2">
                         {task.description}
                       </p>
                     )}
+
+                    {/* Checklist Badge (Only when markdown tasks exist) */}
+                    <div className="mb-3">
+                      <ChecklistBadge description={task.description} />
+                    </div>
 
                     {/* Footer: Linked Request & Assignee */}
                     <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800/80 text-xs">

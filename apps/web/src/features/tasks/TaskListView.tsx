@@ -2,6 +2,8 @@ import React from "react";
 import { DataTable, type Column } from "../../components/ui/DataTable";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { PriorityBadge } from "../../components/ui/PriorityBadge";
+import { DueDateBadge } from "./DueDateBadge";
+import { ChecklistBadge } from "./ChecklistBadge";
 import type { TaskItem, TaskStatus } from "../../types/tasks";
 
 interface TaskListViewProps {
@@ -35,7 +37,7 @@ export function TaskListView({
       header: "Task",
       sortable: true,
       render: (task) => (
-        <div className="max-w-xs sm:max-w-md">
+        <div className="max-w-xs sm:max-w-md py-0.5">
           <div className="font-semibold text-slate-900 dark:text-slate-100 line-clamp-1">
             {task.title}
           </div>
@@ -44,6 +46,9 @@ export function TaskListView({
               {task.description}
             </div>
           )}
+          <div className="mt-1">
+            <ChecklistBadge description={task.description} />
+          </div>
         </div>
       ),
     },
@@ -98,14 +103,7 @@ export function TaskListView({
       header: "Due Date",
       sortable: true,
       render: (task) => (
-        <span className="text-xs text-slate-500 dark:text-slate-400">
-          {task.dueDate
-            ? new Date(task.dueDate).toLocaleDateString(undefined, {
-                month: "short",
-                day: "numeric",
-              })
-            : "—"}
-        </span>
+        <DueDateBadge dueDate={task.dueDate} status={task.status} />
       ),
     },
     {

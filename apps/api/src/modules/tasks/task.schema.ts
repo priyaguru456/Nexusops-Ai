@@ -41,18 +41,24 @@ export const assignTaskSchema = z.object({
   assigneeId: z.string().uuid("Invalid assignee ID").nullable(),
 });
 
+const emptyToUndefined = (val: unknown) =>
+  typeof val === "string" && val.trim() === "" ? undefined : val;
+
 export const getTasksQuerySchema = z.object({
-  status: z.nativeEnum(TaskStatus).optional(),
-  priority: z.nativeEnum(Priority).optional(),
-  assigneeId: z.string().uuid().optional(),
-  requestId: z.string().uuid().optional(),
-  search: z.string().trim().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-  sortBy: z
-    .enum(["createdAt", "updatedAt", "title", "priority", "status", "dueDate"])
-    .default("createdAt"),
-  sortOrder: z.enum(["asc", "desc"]).default("desc"),
+  status: z.preprocess(emptyToUndefined, z.nativeEnum(TaskStatus).optional()),
+  priority: z.preprocess(emptyToUndefined, z.nativeEnum(Priority).optional()),
+  assigneeId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  requestId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  search: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+  page: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).default(1)),
+  limit: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).max(100).default(20)),
+  sortBy: z.preprocess(
+    emptyToUndefined,
+    z
+      .enum(["createdAt", "updatedAt", "title", "priority", "status", "dueDate"])
+      .default("createdAt")
+  ),
+  sortOrder: z.preprocess(emptyToUndefined, z.enum(["asc", "desc"]).default("desc")),
 });
 
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;

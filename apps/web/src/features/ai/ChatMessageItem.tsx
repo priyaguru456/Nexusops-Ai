@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   Zap,
   BookOpen,
+  RotateCcw,
 } from "lucide-react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { CitationChip } from "./CitationChip";
@@ -19,6 +20,7 @@ interface ChatMessageItemProps {
   isStreamingActive?: boolean;
   onSelectCitation?: (citation: Citation, index: number) => void;
   onFeedback?: (messageId: string, value: 1 | -1) => void;
+  onRegenerate?: (messageId: string) => void;
 }
 
 export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
@@ -26,6 +28,7 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
   isStreamingActive = false,
   onSelectCitation,
   onFeedback,
+  onRegenerate,
 }) => {
   const [copied, setCopied] = useState(false);
   const [submittingVote, setSubmittingVote] = useState(false);
@@ -173,6 +176,7 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
               onClick={handleCopy}
               className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               title="Copy answer"
+              aria-label="Copy answer"
             >
               {copied ? (
                 <>
@@ -186,6 +190,21 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
                 </>
               )}
             </button>
+
+            {/* Regenerate button */}
+            {onRegenerate && (
+              <button
+                type="button"
+                disabled={isStreamingActive}
+                onClick={() => onRegenerate(message.id)}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
+                title={isStreamingActive ? "Disabled while streaming" : "Regenerate answer"}
+                aria-label="Regenerate answer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Regenerate</span>
+              </button>
+            )}
 
             <span className="text-slate-300 dark:text-slate-700">|</span>
 

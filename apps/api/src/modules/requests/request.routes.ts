@@ -30,6 +30,11 @@ requestRouter.get(
 );
 
 requestRouter.get(
+  "/counts",
+  (req, res, next) => requestController.getStatusCounts(req, res, next)
+);
+
+requestRouter.get(
   "/:id",
   validate({ params: requestIdParamSchema }),
   (req, res, next) => requestController.getRequestById(req, res, next)

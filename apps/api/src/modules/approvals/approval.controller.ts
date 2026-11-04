@@ -1,13 +1,17 @@
 import type { Request, Response, NextFunction } from "express";
 import { approvalService } from "./approval.service";
 import { AppError } from "../../lib/errors";
+import { env } from "../../config/env";
 
 export class ApprovalController {
   async getPendingApprovals(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       if (!req.user) throw AppError.unauthorized();
       const steps = await approvalService.getPendingApprovals(req.user);
-      res.status(200).json({ steps });
+      res.status(200).json({
+        steps,
+        escalationAfterHours: env.ESCALATION_AFTER_HOURS,
+      });
     } catch (error) {
       next(error);
     }
@@ -19,6 +23,17 @@ export class ApprovalController {
       const stepId = Array.isArray(req.params.stepId) ? req.params.stepId[0] : req.params.stepId;
       const result = await approvalService.approveStep(stepId, req.user, req.body.comment);
       res.status(200).json({ step: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async bulkApprove(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) throw AppError.unauthorized();
+      const { stepIds, comment } = req.body;
+      const result = await approvalService.bulkApproveSteps(stepIds, req.user, comment);
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }

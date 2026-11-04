@@ -61,10 +61,10 @@ export interface TaskQueryFilters {
   assigneeId?: string;
   requestId?: string;
   search?: string;
-  page: number;
-  limit: number;
-  sortBy: string;
-  sortOrder: "asc" | "desc";
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
 }
 
 export class TaskRepository {
@@ -118,12 +118,12 @@ export class TaskRepository {
     });
   }
 
-  async findAll(filters: TaskQueryFilters, visibilityWhere: Prisma.TaskWhereInput) {
-    const where: Prisma.TaskWhereInput = {
-      AND: [visibilityWhere],
-    };
-
+  async findAll(filters: TaskQueryFilters, visibilityWhere: Prisma.TaskWhereInput = {}) {
     const andConditions: Prisma.TaskWhereInput[] = [];
+
+    if (visibilityWhere && Object.keys(visibilityWhere).length > 0) {
+      andConditions.push(visibilityWhere);
+    }
 
     if (filters.status) {
       andConditions.push({ status: filters.status });
@@ -141,21 +141,34 @@ export class TaskRepository {
       andConditions.push({ requestId: filters.requestId });
     }
 
-    if (filters.search) {
+    if (filters.search && typeof filters.search === "string" && filters.search.trim()) {
       andConditions.push({
         OR: [
-          { title: { contains: filters.search, mode: "insensitive" } },
-          { description: { contains: filters.search, mode: "insensitive" } },
+          { title: { contains: filters.search.trim(), mode: "insensitive" } },
+          { description: { contains: filters.search.trim(), mode: "insensitive" } },
         ],
       });
     }
 
-    if (andConditions.length > 0) {
-      (where.AND as Prisma.TaskWhereInput[]).push(...andConditions);
-    }
+    const where: Prisma.TaskWhereInput = andConditions.length > 0 ? { AND: andConditions } : {};
 
-    const skip = (filters.page - 1) * filters.limit;
-    const take = filters.limit;
+    const page = Math.max(1, Number(filters.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(filters.limit) || 20));
+    const skip = (page - 1) * limit;
+    const take = limit;
+
+    const allowedSortFields = [
+      "createdAt",
+      "updatedAt",
+      "title",
+      "priority",
+      "status",
+      "dueDate",
+    ] as const;
+    const sortBy = (filters.sortBy && allowedSortFields.includes(filters.sortBy as any))
+      ? filters.sortBy
+      : "createdAt";
+    const sortOrder = filters.sortOrder === "asc" ? "asc" : "desc";
 
     const [total, tasks] = await Promise.all([
       prisma.task.count({ where }),
@@ -164,7 +177,7 @@ export class TaskRepository {
         skip,
         take,
         orderBy: {
-          [filters.sortBy]: filters.sortOrder,
+          [sortBy]: sortOrder,
         },
         include: taskDetailInclude,
       }),
@@ -173,9 +186,9 @@ export class TaskRepository {
     return {
       tasks,
       total,
-      page: filters.page,
-      limit: filters.limit,
-      totalPages: Math.ceil(total / filters.limit) || 1,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
     };
   }
 }

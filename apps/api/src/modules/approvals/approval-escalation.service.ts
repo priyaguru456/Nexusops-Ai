@@ -174,8 +174,11 @@ export class ApprovalEscalationService {
         await notificationService.notifyMultiple(
           adminUserIds,
           "APPROVAL_ESCALATED",
+          "Approval Overdue Escalation",
           `ESCALATION: Step ${step.stepOrder} for request "${step.request.title}" is overdue (pending > ${thresholdHours}h). Admin attention required.`,
-          `/requests/${step.requestId}`
+          `/requests/${step.requestId}`,
+          "WorkRequest",
+          step.requestId
         );
       }
 
@@ -188,8 +191,11 @@ export class ApprovalEscalationService {
         await notificationService.notifyMultiple(
           reminderTargetIds,
           "APPROVAL_REMINDER",
+          "Approval Reminder",
           `REMINDER: Step ${step.stepOrder} for request "${step.request.title}" has been pending for over ${thresholdHours} hours and requires your decision.`,
-          `/requests/${step.requestId}`
+          `/requests/${step.requestId}`,
+          "WorkRequest",
+          step.requestId
         );
       }
 

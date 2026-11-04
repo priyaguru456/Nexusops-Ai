@@ -3,14 +3,25 @@ import { notificationsApi } from "./api";
 
 export const NOTIFICATION_KEYS = {
   all: ["notifications"] as const,
-  list: (unreadOnly?: boolean) => [...NOTIFICATION_KEYS.all, "list", { unreadOnly }] as const,
+  list: (unreadOnly = false, limit = 20, page = 1) =>
+    [...NOTIFICATION_KEYS.all, "list", { unreadOnly, limit, page }] as const,
+  unreadCount: () => [...NOTIFICATION_KEYS.all, "unreadCount"] as const,
 };
 
-export const useNotifications = (unreadOnly = false, limit = 20) => {
+export const useNotifications = (unreadOnly = false, limit = 20, page = 1) => {
   return useQuery({
-    queryKey: NOTIFICATION_KEYS.list(unreadOnly),
-    queryFn: () => notificationsApi.getNotifications(unreadOnly, limit),
-    // Poll every 30 seconds
+    queryKey: NOTIFICATION_KEYS.list(unreadOnly, limit, page),
+    queryFn: () => notificationsApi.getNotifications(page, limit, unreadOnly),
+    // Poll every 30 seconds for real-time responsiveness
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
+  });
+};
+
+export const useUnreadNotificationCount = () => {
+  return useQuery({
+    queryKey: NOTIFICATION_KEYS.unreadCount(),
+    queryFn: () => notificationsApi.getUnreadCount(),
     refetchInterval: 30000,
     refetchIntervalInBackground: false,
   });

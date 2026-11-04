@@ -69,8 +69,11 @@ export class ApprovalService {
       await notificationService.notifyMultiple(
         approverIds,
         "APPROVAL_REQUESTED",
+        "Approval Requested",
         `Approval requested for "${request.title}"`,
-        `/requests/${requestId}`
+        `/requests/${requestId}`,
+        "WorkRequest",
+        requestId
       );
     }
   }
@@ -249,16 +252,22 @@ export class ApprovalService {
         await notificationService.notifyMultiple(
           nextApproverIds,
           "APPROVAL_REQUESTED",
+          "Approval Required",
           `Step ${nextStep.stepOrder} approval needed for "${step.request.title}"`,
-          `/requests/${step.requestId}`
+          `/requests/${step.requestId}`,
+          "WorkRequest",
+          step.requestId
         );
 
         // Notify requester of progress
         await notificationService.notify({
           userId: step.request.requesterId,
           type: "APPROVAL_DECISION",
+          title: "Request Update",
           message: `Step ${step.stepOrder} of your request "${step.request.title}" was approved by ${user.name}`,
           link: `/requests/${step.requestId}`,
+          entityType: "WorkRequest",
+          entityId: step.requestId,
         });
       } else {
         // Final approval step!
@@ -307,8 +316,11 @@ export class ApprovalService {
         await notificationService.notify({
           userId: step.request.requesterId,
           type: "APPROVAL_DECISION",
+          title: "Request Approved",
           message: `Your request "${step.request.title}" has been approved! A fulfillment task has been created.`,
           link: `/requests/${step.requestId}`,
+          entityType: "WorkRequest",
+          entityId: step.requestId,
         });
       }
 
@@ -423,8 +435,11 @@ export class ApprovalService {
       await notificationService.notify({
         userId: step.request.requesterId,
         type: "APPROVAL_DECISION",
+        title: "Request Rejected",
         message: `Your request "${step.request.title}" was rejected by ${user.name}: "${comment.trim()}"`,
         link: `/requests/${step.requestId}`,
+        entityType: "WorkRequest",
+        entityId: step.requestId,
       });
 
       return updatedStep;
@@ -478,11 +493,65 @@ export class ApprovalService {
     await notificationService.notify({
       userId: newApproverId,
       type: "APPROVAL_REQUESTED",
+      title: "Approval Assigned",
       message: `You have been delegated to approve "${step.request.title}"`,
       link: `/requests/${step.requestId}`,
+      entityType: "WorkRequest",
+      entityId: step.requestId,
     });
 
     return updated;
+  }
+
+  /**
+   * Bulk approves multiple approval steps.
+   * Checks authorization and validity per item, executing approved steps
+   * and returning detailed success/failure per item.
+   */
+  async bulkApproveSteps(
+    stepIds: string[],
+    user: AuthenticatedUser,
+    comment?: string
+  ) {
+    if (user.role !== Role.MANAGER && user.role !== Role.ADMIN) {
+      throw AppError.forbidden("Only managers and admins can approve requests");
+    }
+
+    const results: Array<{
+      stepId: string;
+      success: boolean;
+      step?: any;
+      error?: string;
+    }> = [];
+
+    for (const stepId of stepIds) {
+      try {
+        const approvedStep = await this.approveStep(stepId, user, comment);
+        results.push({
+          stepId,
+          success: true,
+          step: approvedStep,
+        });
+      } catch (err: any) {
+        results.push({
+          stepId,
+          success: false,
+          error: err?.message || "Failed to approve step",
+        });
+      }
+    }
+
+    const succeeded = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success).length;
+
+    return {
+      results,
+      summary: {
+        total: stepIds.length,
+        succeeded,
+        failed,
+      },
+    };
   }
 }
 

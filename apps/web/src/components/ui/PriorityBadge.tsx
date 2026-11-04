@@ -49,6 +49,8 @@ export function PriorityBadge({
     },
   };
 
+  const isUrgent = normalized === "URGENT";
+
   const config = configMap[normalized] || {
     label: normalized,
     bg: "bg-slate-100 dark:bg-slate-800",
@@ -61,9 +63,20 @@ export function PriorityBadge({
 
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium border ${config.bg} ${config.text} ${config.border} ${className}`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium border ${config.bg} ${config.text} ${config.border} ${
+        isUrgent
+          ? "motion-safe:animate-pulse ring-1 ring-rose-400/40 dark:ring-rose-500/40 motion-reduce:animate-none"
+          : ""
+      } ${className}`}
+      aria-label={`Priority: ${config.label}${isUrgent ? " (Urgent)" : ""}`}
     >
-      {showIcon && <IconComponent className="w-3 h-3 shrink-0" />}
+      {isUrgent && (
+        <span className="relative flex h-2 w-2 mr-0.5 shrink-0" aria-hidden="true">
+          <span className="motion-safe:animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75 motion-reduce:hidden" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-600 dark:bg-rose-500" />
+        </span>
+      )}
+      {showIcon && <IconComponent className="w-3 h-3 shrink-0" aria-hidden="true" />}
       <span>{config.label}</span>
     </span>
   );

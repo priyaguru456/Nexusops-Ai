@@ -11,6 +11,8 @@ export interface ApprovalStepItem {
   status: ApprovalStatus;
   comment: string | null;
   decidedAt: string | null;
+  activatedAt?: string | null;
+  escalatedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   approver?: {
@@ -50,6 +52,28 @@ export interface PendingApprovalStep extends ApprovalStepItem {
 
 export interface PendingApprovalsResponse {
   steps: PendingApprovalStep[];
+  escalationAfterHours?: number;
+}
+
+export interface BulkApprovePayload {
+  stepIds: string[];
+  comment?: string;
+}
+
+export interface BulkApproveItemResult {
+  stepId: string;
+  success: boolean;
+  step?: ApprovalStepItem;
+  error?: string;
+}
+
+export interface BulkApproveResponse {
+  results: BulkApproveItemResult[];
+  summary: {
+    total: number;
+    succeeded: number;
+    failed: number;
+  };
 }
 
 export interface ApproveStepPayload {

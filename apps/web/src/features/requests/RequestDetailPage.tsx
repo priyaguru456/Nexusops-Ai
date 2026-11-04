@@ -26,12 +26,13 @@ import {
 import { useAuth } from "../auth/AuthContext";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { PriorityBadge } from "../../components/ui/PriorityBadge";
+import { CategoryBadge } from "../../components/ui/CategoryBadge";
 import { Button } from "../../components/ui/button";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { DetailSkeleton } from "../../components/ui/LoadingSkeleton";
-import { CommentThread } from "../comments/CommentThread";
 import { ActivityTimeline } from "./ActivityTimeline";
 import { ApprovalStepper } from "../approvals/ApprovalStepper";
+import { formatKolkataDate } from "../../lib/utils";
 
 export function RequestDetailPage(): React.JSX.Element {
   const { id = "" } = useParams<{ id: string }>();
@@ -127,19 +128,24 @@ export function RequestDetailPage(): React.JSX.Element {
             <ArrowLeft className="w-4 h-4" />
           </Link>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
                 {request.title}
               </h1>
               <StatusBadge status={request.status} />
               <PriorityBadge priority={request.priority} />
+              <CategoryBadge category={request.category} size="sm" />
             </div>
-            <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-3">
+            <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex flex-wrap items-center gap-3">
               <span>ID: #{request.id.slice(0, 8)}</span>
               <span>•</span>
-              <span>Category: <strong>{request.category}</strong></span>
-              <span>•</span>
-              <span>Created {new Date(request.createdAt).toLocaleDateString()}</span>
+              <span>Created {formatKolkataDate(request.createdAt)}</span>
+              {request.dueDate && (
+                <>
+                  <span>•</span>
+                  <span>Due {formatKolkataDate(request.dueDate)}</span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -344,11 +350,7 @@ export function RequestDetailPage(): React.JSX.Element {
                   <span>
                     Due Date:{" "}
                     <strong className="text-slate-900 dark:text-slate-100">
-                      {new Date(request.dueDate).toLocaleDateString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
+                      {formatKolkataDate(request.dueDate)}
                     </strong>
                   </span>
                 </div>
@@ -393,7 +395,7 @@ export function RequestDetailPage(): React.JSX.Element {
                           {file.fileName}
                         </div>
                         <div className="text-[11px] text-slate-400">
-                          {new Date(file.createdAt).toLocaleDateString()}
+                          {formatKolkataDate(file.createdAt)}
                         </div>
                       </div>
                     </div>
@@ -407,13 +409,16 @@ export function RequestDetailPage(): React.JSX.Element {
             )}
           </div>
 
-          {/* Comments Discussion Thread */}
-          <div className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-            <CommentThread entityType="request" entityId={request.id} />
-          </div>
+          {/* Merged Activity Timeline (Status Changes, Approval Decisions, Comments & Comment Box) */}
+          <ActivityTimeline
+            requestId={request.id}
+            auditLogs={activity}
+            approvalSteps={request.approvalSteps}
+            isLoadingAudit={isLoadingActivity}
+          />
         </div>
 
-        {/* Right Column: Requester details & Timeline */}
+        {/* Right Column: Requester details & Summary */}
         <div className="space-y-6">
           {/* Requester Profile Card */}
           <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm space-y-4">
@@ -450,9 +455,39 @@ export function RequestDetailPage(): React.JSX.Element {
             </div>
           </div>
 
-          {/* Activity Timeline Card */}
-          <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-            <ActivityTimeline activity={activity} isLoading={isLoadingActivity} />
+          {/* Quick Details Card */}
+          <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Request Metadata
+            </h3>
+            <div className="space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Category:</span>
+                <CategoryBadge category={request.category} size="sm" />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Priority:</span>
+                <PriorityBadge priority={request.priority} />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Status:</span>
+                <StatusBadge status={request.status} size="sm" />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Created:</span>
+                <span className="font-medium text-slate-700 dark:text-slate-300">
+                  {formatKolkataDate(request.createdAt)}
+                </span>
+              </div>
+              {request.dueDate && (
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Due Date:</span>
+                  <span className="font-medium text-slate-700 dark:text-slate-300">
+                    {formatKolkataDate(request.dueDate)}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

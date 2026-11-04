@@ -81,7 +81,7 @@ export interface UpdateRequestData {
 }
 
 export interface RequestQueryFilters {
-  status?: RequestStatus;
+  status?: RequestStatus | "PENDING_APPROVAL";
   priority?: Priority;
   category?: RequestCategory;
   startDate?: Date;
@@ -190,15 +190,54 @@ export class RequestRepository {
     });
   }
 
-  async findAll(filters: RequestQueryFilters, visibilityWhere: Prisma.WorkRequestWhereInput) {
-    const where: Prisma.WorkRequestWhereInput = {
-      AND: [visibilityWhere],
-    };
+  async getStatusCounts(visibilityWhere: Prisma.WorkRequestWhereInput = {}) {
+    const counts = await prisma.workRequest.groupBy({
+      by: ["status"],
+      where: visibilityWhere,
+      _count: {
+        _all: true,
+      },
+    });
 
+    const statusCountMap: Record<string, number> = {};
+    let total = 0;
+
+    for (const item of counts) {
+      statusCountMap[item.status] = item._count._all;
+      total += item._count._all;
+    }
+
+    const pendingApproval =
+      (statusCountMap[RequestStatus.SUBMITTED] || 0) +
+      (statusCountMap[RequestStatus.IN_REVIEW] || 0);
+
+    return {
+      all: total,
+      pendingApproval,
+      approved: statusCountMap[RequestStatus.APPROVED] || 0,
+      inProgress: statusCountMap[RequestStatus.IN_PROGRESS] || 0,
+      completed: statusCountMap[RequestStatus.COMPLETED] || 0,
+      rejected: statusCountMap[RequestStatus.REJECTED] || 0,
+      draft: statusCountMap[RequestStatus.DRAFT] || 0,
+      cancelled: statusCountMap[RequestStatus.CANCELLED] || 0,
+    };
+  }
+
+  async findAll(filters: RequestQueryFilters, visibilityWhere: Prisma.WorkRequestWhereInput = {}) {
     const andConditions: Prisma.WorkRequestWhereInput[] = [];
 
+    if (visibilityWhere && Object.keys(visibilityWhere).length > 0) {
+      andConditions.push(visibilityWhere);
+    }
+
     if (filters.status) {
-      andConditions.push({ status: filters.status });
+      if (filters.status === "PENDING_APPROVAL") {
+        andConditions.push({
+          status: { in: [RequestStatus.SUBMITTED, RequestStatus.IN_REVIEW] },
+        });
+      } else {
+        andConditions.push({ status: filters.status });
+      }
     }
 
     if (filters.priority) {
@@ -216,21 +255,35 @@ export class RequestRepository {
       andConditions.push({ createdAt: dateCondition });
     }
 
-    if (filters.search) {
+    if (filters.search && typeof filters.search === "string" && filters.search.trim()) {
       andConditions.push({
         OR: [
-          { title: { contains: filters.search, mode: "insensitive" } },
-          { description: { contains: filters.search, mode: "insensitive" } },
+          { title: { contains: filters.search.trim(), mode: "insensitive" } },
+          { description: { contains: filters.search.trim(), mode: "insensitive" } },
         ],
       });
     }
 
-    if (andConditions.length > 0) {
-      (where.AND as Prisma.WorkRequestWhereInput[]).push(...andConditions);
-    }
+    const where: Prisma.WorkRequestWhereInput = andConditions.length > 0 ? { AND: andConditions } : {};
 
-    const skip = (filters.page - 1) * filters.limit;
-    const take = filters.limit;
+    const page = Math.max(1, Number(filters.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(filters.limit) || 20));
+    const skip = (page - 1) * limit;
+    const take = limit;
+
+    const allowedSortFields = [
+      "createdAt",
+      "updatedAt",
+      "title",
+      "priority",
+      "status",
+      "dueDate",
+      "amount",
+    ] as const;
+    const sortBy = allowedSortFields.includes(filters.sortBy as any)
+      ? filters.sortBy
+      : "createdAt";
+    const sortOrder = filters.sortOrder === "asc" ? "asc" : "desc";
 
     const [total, requests] = await Promise.all([
       prisma.workRequest.count({ where }),
@@ -239,7 +292,7 @@ export class RequestRepository {
         skip,
         take,
         orderBy: {
-          [filters.sortBy]: filters.sortOrder,
+          [sortBy]: sortOrder,
         },
         include: requestDetailInclude,
       }),
@@ -248,9 +301,9 @@ export class RequestRepository {
     return {
       requests,
       total,
-      page: filters.page,
-      limit: filters.limit,
-      totalPages: Math.ceil(total / filters.limit) || 1,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
     };
   }
 }

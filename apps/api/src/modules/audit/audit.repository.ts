@@ -59,8 +59,10 @@ export class AuditRepository {
       where.createdAt = dateCondition;
     }
 
-    const skip = (filters.page - 1) * filters.limit;
-    const take = filters.limit;
+    const page = Math.max(1, Number(filters.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(filters.limit) || 20));
+    const skip = (page - 1) * limit;
+    const take = limit;
 
     const [total, logs] = await Promise.all([
       prisma.auditLog.count({ where }),
@@ -87,9 +89,9 @@ export class AuditRepository {
     return {
       logs,
       total,
-      page: filters.page,
-      limit: filters.limit,
-      totalPages: Math.ceil(total / filters.limit) || 1,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
     };
   }
 }

@@ -1,11 +1,14 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, Search, RotateCcw, ArrowRight } from "lucide-react";
-import { useRequests } from "./hooks";
+import { Plus, Search, RotateCcw, ArrowRight, AlertCircle } from "lucide-react";
+import { useRequests, useRequestCounts } from "./hooks";
 import { DataTable, type Column } from "../../components/ui/DataTable";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { PriorityBadge } from "../../components/ui/PriorityBadge";
+import { CategoryBadge } from "../../components/ui/CategoryBadge";
 import { Button } from "../../components/ui/button";
+import { BackButton } from "../../components/ui/BackButton";
+import { formatKolkataDate } from "../../lib/utils";
 import type { WorkRequest, RequestQueryFilters } from "../../types/requests";
 
 export function RequestsListPage(): React.JSX.Element {
@@ -22,7 +25,25 @@ export function RequestsListPage(): React.JSX.Element {
     sortOrder: "desc",
   });
 
-  const { data, isLoading } = useRequests(filters);
+  const { data, isLoading, isError, error, refetch } = useRequests(filters);
+  const { data: counts, isLoading: isLoadingCounts } = useRequestCounts();
+
+  const statusTabs: Array<{
+    id: RequestQueryFilters["status"];
+    label: string;
+    count: number;
+  }> = [
+    { id: "", label: "All", count: counts?.all ?? 0 },
+    {
+      id: "PENDING_APPROVAL",
+      label: "Pending Approval",
+      count: counts?.pendingApproval ?? 0,
+    },
+    { id: "APPROVED", label: "Approved", count: counts?.approved ?? 0 },
+    { id: "IN_PROGRESS", label: "In Progress", count: counts?.inProgress ?? 0 },
+    { id: "COMPLETED", label: "Completed", count: counts?.completed ?? 0 },
+    { id: "REJECTED", label: "Rejected", count: counts?.rejected ?? 0 },
+  ];
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFilters((prev) => ({ ...prev, search: e.target.value, page: 1 }));
@@ -78,11 +99,7 @@ export function RequestsListPage(): React.JSX.Element {
       key: "category",
       header: "Category",
       sortable: true,
-      render: (req) => (
-        <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium">
-          {req.category}
-        </span>
-      ),
+      render: (req) => <CategoryBadge category={req.category} size="sm" />,
     },
     {
       key: "priority",
@@ -116,13 +133,7 @@ export function RequestsListPage(): React.JSX.Element {
       sortable: true,
       render: (req) => (
         <span className="text-xs text-slate-500 dark:text-slate-400">
-          {req.dueDate
-            ? new Date(req.dueDate).toLocaleDateString(undefined, {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-              })
-            : "—"}
+          {formatKolkataDate(req.dueDate)}
         </span>
       ),
     },
@@ -132,10 +143,7 @@ export function RequestsListPage(): React.JSX.Element {
       sortable: true,
       render: (req) => (
         <span className="text-xs text-slate-500 dark:text-slate-400">
-          {new Date(req.createdAt).toLocaleDateString(undefined, {
-            month: "short",
-            day: "numeric",
-          })}
+          {formatKolkataDate(req.createdAt)}
         </span>
       ),
     },
@@ -159,20 +167,64 @@ export function RequestsListPage(): React.JSX.Element {
     <div className="space-y-6">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            Work Requests
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            Track, review, and manage operational and administrative requests
-          </p>
+        <div className="flex items-center gap-3">
+          <BackButton />
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+              Work Requests
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+              Track, review, and manage operational and administrative requests
+            </p>
+          </div>
         </div>
         <Link to="/requests/new">
-          <Button className="gap-2">
+          <Button className="gap-2 shadow-xs">
             <Plus className="w-4 h-4" />
             <span>Create Request</span>
           </Button>
         </Link>
+      </div>
+
+      {/* Status Filter Tabs with Counts from API */}
+      <div
+        className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-slate-200 dark:border-slate-800 scrollbar-none"
+        role="tablist"
+        aria-label="Filter requests by status"
+      >
+        {statusTabs.map((tab) => {
+          const isActive = (filters.status || "") === (tab.id || "");
+
+          return (
+            <button
+              key={tab.label}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => handleFilterChange("status", tab.id || "")}
+              className={`inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg transition-all shrink-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                isActive
+                  ? "bg-indigo-600 text-white shadow-xs"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+              }`}
+            >
+              <span>{tab.label}</span>
+              <span
+                className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
+                  isActive
+                    ? "bg-white/20 text-white"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                }`}
+              >
+                {isLoadingCounts ? (
+                  <span className="inline-block w-3 h-3 animate-pulse bg-current opacity-30 rounded-full" />
+                ) : (
+                  tab.count
+                )}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Filters Bar */}
@@ -197,6 +249,7 @@ export function RequestsListPage(): React.JSX.Element {
             className="text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             <option value="">All Statuses</option>
+            <option value="PENDING_APPROVAL">Pending Approval</option>
             <option value="DRAFT">Draft</option>
             <option value="SUBMITTED">Submitted</option>
             <option value="IN_REVIEW">In Review</option>
@@ -249,6 +302,29 @@ export function RequestsListPage(): React.JSX.Element {
           </div>
         )}
       </div>
+
+      {/* Error Alert Banner */}
+      {isError && (
+        <div className="p-4 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 text-sm flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+            <span>
+              {(error as any)?.response?.data?.error ||
+                (error as any)?.response?.data?.message ||
+                (error as Error)?.message ||
+                "Failed to load requests."}
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => refetch()}
+            className="border-rose-300 dark:border-rose-800 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300"
+          >
+            Retry
+          </Button>
+        </div>
+      )}
 
       {/* Requests Data Table */}
       <DataTable

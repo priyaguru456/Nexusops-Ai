@@ -47,6 +47,16 @@ export class RequestController {
     }
   }
 
+  async getStatusCounts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) throw AppError.unauthorized();
+      const counts = await requestService.getStatusCounts(req.user);
+      res.status(200).json({ counts });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async getRequestById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       if (!req.user) throw AppError.unauthorized();

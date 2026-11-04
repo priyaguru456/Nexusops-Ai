@@ -12,12 +12,16 @@ export interface UserQueryFilters {
 
 export interface PaginatedUsersResponse {
   users: User[];
-  meta: {
+  meta?: {
     page: number;
     limit: number;
     total: number;
     totalPages: number;
   };
+  total?: number;
+  page?: number;
+  limit?: number;
+  totalPages?: number;
 }
 
 export const adminApi = {

@@ -22,6 +22,8 @@ import {
 import { StatCard } from "./components/StatCard";
 import { DateRangeFilter } from "./components/DateRangeFilter";
 import { CSVExportButton } from "./components/CSVExportButton";
+import { PDFExportButton } from "./components/PDFExportButton";
+import { formatKolkataDateTime, formatKolkataDate } from "../../lib/date";
 import {
   TimeSeriesChart,
   CategoryPieChart,
@@ -32,6 +34,7 @@ import {
 import { AnalyticsSkeletons } from "./components/AnalyticsSkeletons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../components/ui/card";
 import { Badge } from "../../components/ui/badge";
+import { BackButton } from "../../components/ui/BackButton";
 
 export const AnalyticsPage: React.FC = () => {
   const { user, role } = useAuth();
@@ -58,29 +61,81 @@ export const AnalyticsPage: React.FC = () => {
     <div className="space-y-6 max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 animate-in fade-in duration-200">
       {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-              Operations & AI Analytics
-            </h1>
-            <Badge variant="outline" className="text-[11px] font-medium border-indigo-200 dark:border-indigo-900/60 text-indigo-700 dark:text-indigo-300">
-              {scopeLabel}
-            </Badge>
+        <div className="flex items-center gap-3">
+          <div className="no-print">
+            <BackButton />
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Real-time performance indicators, workflow metrics, and AI document assistance telemetry.
-          </p>
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                Operations & AI Analytics
+              </h1>
+              <Badge variant="outline" className="text-[11px] font-medium border-indigo-200 dark:border-indigo-900/60 text-indigo-700 dark:text-indigo-300">
+                {scopeLabel}
+              </Badge>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Real-time performance indicators, workflow metrics, and AI document assistance telemetry.
+            </p>
+          </div>
         </div>
 
-        {/* Date Filter & CSV Export Controls */}
-        <div className="flex items-center flex-wrap gap-2.5">
+        {/* Date Filter & Export Controls */}
+        <div className="flex items-center flex-wrap gap-2.5 no-print">
           <DateRangeFilter />
           <CSVExportButton from={from} to={to} />
+          <PDFExportButton />
+        </div>
+      </div>
+
+      {/* Dedicated Print-Only Header for PDF Export */}
+      <div className="print-only border-b-2 border-slate-900 pb-4 mb-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-indigo-600 text-white font-extrabold flex items-center justify-center text-lg">
+              N
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-slate-900">NexusOps AI</h1>
+              <p className="text-xs text-slate-600">Enterprise Operations Platform • Analytics & Intelligence Report</p>
+            </div>
+          </div>
+          <div className="text-right text-xs text-slate-700">
+            <p className="font-semibold">Generated: {formatKolkataDateTime(new Date())}</p>
+            <p className="text-[11px] text-slate-500">Timezone: Asia/Kolkata (IST)</p>
+          </div>
+        </div>
+
+        <div className="mt-4 pt-3 border-t border-slate-200 grid grid-cols-3 gap-4 text-xs text-slate-800">
+          <div>
+            <span className="font-semibold text-slate-500 block text-[10px] uppercase">Selected Date Range</span>
+            <span className="font-bold">
+              {from && to
+                ? `${formatKolkataDate(from)} to ${formatKolkataDate(to)}`
+                : "Last 30 Days (Standard Scope)"}
+            </span>
+          </div>
+          <div>
+            <span className="font-semibold text-slate-500 block text-[10px] uppercase">Operational Scope</span>
+            <span className="font-bold">{scopeLabel}</span>
+          </div>
+          <div>
+            <span className="font-semibold text-slate-500 block text-[10px] uppercase">Report Subject</span>
+            <span className="font-bold">
+              {activeTab === "overview"
+                ? "Executive Operations Overview"
+                : activeTab === "requests"
+                ? "Requests & Approvals Telemetry"
+                : activeTab === "tasks"
+                ? "Task Fulfillment & Bottlenecks"
+                : "AI Usage & Model Metrics"}
+            </span>
+          </div>
         </div>
       </div>
 
       {/* Tabs Navigation */}
-      <div className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 overflow-x-auto pb-px">
+      <div className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 overflow-x-auto pb-px no-print">
         <button
           type="button"
           onClick={() => setActiveTab("overview")}
@@ -148,7 +203,7 @@ export const AnalyticsPage: React.FC = () => {
           ) : (
             <div className="space-y-6">
               {/* Stat Cards Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 print-avoid-break">
                 <StatCard
                   title="Open Requests"
                   value={overviewQuery.data?.totals.open ?? 0}
@@ -191,8 +246,8 @@ export const AnalyticsPage: React.FC = () => {
               </div>
 
               {/* Charts Row: Requests Over Time + Category Breakdown */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <Card className="lg:col-span-2 border-slate-200 dark:border-slate-800">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 print-avoid-break">
+                <Card className="lg:col-span-2 border-slate-200 dark:border-slate-800 print-avoid-break">
                   <CardHeader className="p-4 pb-2">
                     <CardTitle className="text-sm font-semibold">Requests Over Time</CardTitle>
                     <CardDescription className="text-xs">
@@ -208,7 +263,7 @@ export const AnalyticsPage: React.FC = () => {
                   </CardContent>
                 </Card>
 
-                <Card className="border-slate-200 dark:border-slate-800">
+                <Card className="border-slate-200 dark:border-slate-800 print-avoid-break">
                   <CardHeader className="p-4 pb-2">
                     <CardTitle className="text-sm font-semibold">Category Breakdown</CardTitle>
                     <CardDescription className="text-xs">
@@ -222,7 +277,7 @@ export const AnalyticsPage: React.FC = () => {
               </div>
 
               {/* Tasks Status Overview */}
-              <Card className="border-slate-200 dark:border-slate-800">
+              <Card className="border-slate-200 dark:border-slate-800 print-avoid-break">
                 <CardHeader className="p-4 pb-2">
                   <CardTitle className="text-sm font-semibold">Task Fulfillment Lifecycle</CardTitle>
                   <CardDescription className="text-xs">

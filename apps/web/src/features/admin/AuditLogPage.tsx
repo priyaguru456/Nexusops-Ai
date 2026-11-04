@@ -6,10 +6,12 @@ import {
   Code,
   Calendar,
   X,
+  AlertCircle,
 } from "lucide-react";
 import { useAuditLogs } from "./hooks";
 import { DataTable, type Column } from "../../components/ui/DataTable";
 import { Button } from "../../components/ui/button";
+import { BackButton } from "../../components/ui/BackButton";
 import type { AuditLogItem, AuditLogQueryFilters } from "../../types/audit";
 
 export const AuditLogPage: React.FC = () => {
@@ -20,7 +22,7 @@ export const AuditLogPage: React.FC = () => {
 
   const [selectedMetadata, setSelectedMetadata] = useState<Record<string, unknown> | null>(null);
 
-  const { data, isLoading } = useAuditLogs(filters);
+  const { data, isLoading, isError, error, refetch } = useAuditLogs(filters);
 
   const logs = data?.logs || [];
   const total = data?.total || 0;
@@ -137,18 +139,21 @@ export const AuditLogPage: React.FC = () => {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-              Audit Logs
-            </h1>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-              <Shield className="w-3 h-3" /> Append-Only
-            </span>
+        <div className="flex items-center gap-3">
+          <BackButton />
+          <div>
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                Audit Logs
+              </h1>
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                <Shield className="w-3 h-3" /> Append-Only
+              </span>
+            </div>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+              Immutable audit record of all state mutations, approvals, and authorization actions
+            </p>
           </div>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Immutable audit record of all state mutations, approvals, and authorization actions
-          </p>
         </div>
       </div>
 
@@ -245,6 +250,21 @@ export const AuditLogPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Error state */}
+      {isError && (
+        <div className="p-4 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 shrink-0" />
+            <p className="text-sm">
+              Failed to load audit logs: {(error as any)?.response?.data?.error || (error as Error)?.message || "Unknown error occurred"}
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => refetch()} className="text-xs">
+            Retry
+          </Button>
+        </div>
+      )}
 
       {/* Audit Logs Table */}
       <DataTable

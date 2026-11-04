@@ -118,8 +118,11 @@ export class TaskService {
       await notificationService.notify({
         userId: task.assigneeId,
         type: "TASK_ASSIGNED",
+        title: "Task Assigned",
         message: `You were assigned to task "${task.title}"`,
         link: "/tasks",
+        entityType: "Task",
+        entityId: task.id,
       });
     }
 
@@ -210,8 +213,11 @@ export class TaskService {
       await notificationService.notify({
         userId: assigneeId,
         type: "TASK_ASSIGNED",
+        title: "Task Assigned",
         message: `You were assigned to task "${task.title}"`,
         link: "/tasks",
+        entityType: "Task",
+        entityId: id,
       });
     }
 

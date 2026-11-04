@@ -4,12 +4,24 @@ import type {
   ApproveStepPayload,
   RejectStepPayload,
   ReassignStepPayload,
+  BulkApprovePayload,
+  BulkApproveResponse,
   ApprovalStepItem,
 } from "../../types/approvals";
 
 export const approvalsApi = {
   getPending: async (): Promise<PendingApprovalsResponse> => {
     const res = await api.get<PendingApprovalsResponse>("/approvals/pending");
+    return res.data;
+  },
+
+  bulkApprove: async (
+    payload: BulkApprovePayload
+  ): Promise<BulkApproveResponse> => {
+    const res = await api.post<BulkApproveResponse>(
+      "/approvals/bulk-approve",
+      payload
+    );
     return res.data;
   },
 

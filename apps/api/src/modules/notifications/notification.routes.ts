@@ -17,6 +17,10 @@ notificationRouter.get(
   (req, res, next) => notificationController.getNotifications(req, res, next)
 );
 
+notificationRouter.get("/unread-count", (req, res, next) =>
+  notificationController.getUnreadCount(req, res, next)
+);
+
 notificationRouter.patch("/read-all", (req, res, next) =>
   notificationController.markAllAsRead(req, res, next)
 );

@@ -3,6 +3,7 @@ import {
   fetchRequests,
   fetchRequestById,
   fetchRequestActivity,
+  fetchRequestCounts,
   createRequest,
   updateRequest,
   submitRequest,
@@ -17,6 +18,13 @@ export function useRequests(filters: RequestQueryFilters) {
   return useQuery({
     queryKey: ["requests", filters],
     queryFn: () => fetchRequests(filters),
+  });
+}
+
+export function useRequestCounts() {
+  return useQuery({
+    queryKey: ["request-counts"],
+    queryFn: () => fetchRequestCounts(),
   });
 }
 
@@ -44,6 +52,7 @@ export function useCreateRequest() {
     mutationFn: (formData: FormData) => createRequest(formData),
     onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ["requests"] });
+      queryClient.invalidateQueries({ queryKey: ["request-counts"] });
       success(`Request "${created.title}" created successfully`);
     },
     onError: (err: unknown) => {
@@ -64,6 +73,7 @@ export function useUpdateRequest(id: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["request", id] });
       queryClient.invalidateQueries({ queryKey: ["requests"] });
+      queryClient.invalidateQueries({ queryKey: ["request-counts"] });
       queryClient.invalidateQueries({ queryKey: ["request-activity", id] });
       success("Request updated successfully");
     },
@@ -85,6 +95,7 @@ export function useSubmitRequest(id: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["request", id] });
       queryClient.invalidateQueries({ queryKey: ["requests"] });
+      queryClient.invalidateQueries({ queryKey: ["request-counts"] });
       queryClient.invalidateQueries({ queryKey: ["request-activity", id] });
       success("Request submitted successfully");
     },
@@ -106,6 +117,7 @@ export function useCancelRequest(id: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["request", id] });
       queryClient.invalidateQueries({ queryKey: ["requests"] });
+      queryClient.invalidateQueries({ queryKey: ["request-counts"] });
       queryClient.invalidateQueries({ queryKey: ["request-activity", id] });
       success("Request cancelled successfully");
     },
@@ -128,6 +140,7 @@ export function useTransitionRequestStatus(id: string) {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["request", id] });
       queryClient.invalidateQueries({ queryKey: ["requests"] });
+      queryClient.invalidateQueries({ queryKey: ["request-counts"] });
       queryClient.invalidateQueries({ queryKey: ["request-activity", id] });
       success(`Request status moved to ${variables.status.replace("_", " ")}`);
     },

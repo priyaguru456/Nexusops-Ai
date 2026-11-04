@@ -5,6 +5,7 @@ import { useUsers, useUpdateUserRole, useUpdateUserStatus } from "./hooks";
 import { DataTable, type Column } from "../../components/ui/DataTable";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { BackButton } from "../../components/ui/BackButton";
 import { Input } from "../../components/ui/input";
 import { Dialog } from "../../components/ui/Dialog";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
@@ -243,13 +244,16 @@ export function UserManagementPage(): React.JSX.Element {
     <div className="space-y-6">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            User Management
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Manage company employees, assign roles, and toggle account activation.
-          </p>
+        <div className="flex items-center gap-3">
+          <BackButton />
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+              User Management
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+              Manage company employees, assign roles, and toggle account activation.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -324,7 +328,7 @@ export function UserManagementPage(): React.JSX.Element {
           <div className="flex items-center gap-3">
             <AlertCircle className="w-5 h-5 shrink-0" />
             <p className="text-sm">
-              Failed to load users: {(error as Error)?.message || "Unknown error occurred"}
+              Failed to load users: {(error as any)?.response?.data?.error || (error as Error)?.message || "Unknown error occurred"}
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={() => refetch()} className="text-xs">
@@ -339,9 +343,13 @@ export function UserManagementPage(): React.JSX.Element {
         data={data?.users || []}
         keyExtractor={(u) => u.id}
         isLoading={isLoading}
-        page={data?.meta.page}
-        totalPages={data?.meta.totalPages}
-        total={data?.meta.total}
+        page={data?.meta?.page ?? data?.page ?? page}
+        totalPages={
+          data?.meta?.totalPages ??
+          data?.totalPages ??
+          (data?.total !== undefined ? Math.ceil(data.total / limit) || 1 : 1)
+        }
+        total={data?.meta?.total ?? data?.total ?? 0}
         onPageChange={(newPage) => setPage(newPage)}
         emptyTitle="No users found"
         emptyDescription="Try adjusting your search criteria or filters."

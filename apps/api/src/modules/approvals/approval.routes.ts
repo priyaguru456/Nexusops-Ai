@@ -8,6 +8,7 @@ import {
   approveStepSchema,
   rejectStepSchema,
   reassignStepSchema,
+  bulkApproveSchema,
 } from "./approval.schema";
 
 export const approvalRouter = Router();
@@ -18,6 +19,13 @@ approvalRouter.get(
   "/pending",
   authorize(Role.MANAGER, Role.ADMIN),
   (req, res, next) => approvalController.getPendingApprovals(req, res, next)
+);
+
+approvalRouter.post(
+  "/bulk-approve",
+  authorize(Role.MANAGER, Role.ADMIN),
+  validate({ body: bulkApproveSchema }),
+  (req, res, next) => approvalController.bulkApprove(req, res, next)
 );
 
 approvalRouter.post(

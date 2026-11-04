@@ -88,6 +88,11 @@ export class RequestService {
     return requestRepository.findAll(filters, visibilityWhere);
   }
 
+  async getStatusCounts(user: AuthenticatedUser) {
+    const visibilityWhere = this.buildVisibilityFilter(user);
+    return requestRepository.getStatusCounts(visibilityWhere);
+  }
+
   async getRequestById(id: string, user: AuthenticatedUser) {
     const request = await requestRepository.findById(id);
     if (!request) {

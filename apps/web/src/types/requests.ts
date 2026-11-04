@@ -29,6 +29,12 @@ export interface RequestApprovalStep {
   status: "PENDING" | "APPROVED" | "REJECTED" | "SKIPPED";
   comment: string | null;
   decidedAt: string | null;
+  approver?: {
+    id: string;
+    name: string;
+    email: string;
+    role: Role;
+  } | null;
 }
 
 export interface WorkRequest {
@@ -59,7 +65,7 @@ export interface WorkRequest {
 }
 
 export interface RequestQueryFilters {
-  status?: RequestStatus | "";
+  status?: RequestStatus | "PENDING_APPROVAL" | "";
   priority?: Priority | "";
   category?: RequestCategory | "";
   search?: string;
@@ -69,6 +75,17 @@ export interface RequestQueryFilters {
   limit?: number;
   sortBy?: "createdAt" | "title" | "priority" | "status" | "dueDate" | "amount";
   sortOrder?: "asc" | "desc";
+}
+
+export interface RequestStatusCounts {
+  all: number;
+  pendingApproval: number;
+  approved: number;
+  inProgress: number;
+  completed: number;
+  rejected: number;
+  draft?: number;
+  cancelled?: number;
 }
 
 export interface PaginatedRequestsResponse {

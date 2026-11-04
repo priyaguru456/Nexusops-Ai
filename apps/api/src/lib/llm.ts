@@ -6,6 +6,7 @@ export interface Citation {
   documentId: string;
   documentTitle: string;
   pageNumber: number | null;
+  chunkIndex?: number | null;
   snippet: string;
 }
 
@@ -80,6 +81,7 @@ export function parseAndCleanCitations(
     documentId: string;
     documentTitle: string;
     pageNumber: number | null;
+    chunkIndex?: number | null;
     content: string;
   }>
 ): { cleanedText: string; citations: Citation[] } {
@@ -92,7 +94,7 @@ export function parseAndCleanCitations(
     if (n >= 1 && n <= chunks.length) {
       const chunk = chunks[n - 1];
       const pageNum = chunk.pageNumber ?? 1;
-      const dedupeKey = `${chunk.documentId}_${pageNum}`;
+      const dedupeKey = `${chunk.documentId}_${pageNum}_${chunk.chunkIndex ?? 0}`;
       if (!seen.has(dedupeKey)) {
         seen.add(dedupeKey);
         const rawContent = chunk.content.trim();
@@ -102,6 +104,7 @@ export function parseAndCleanCitations(
           documentId: chunk.documentId,
           documentTitle: chunk.documentTitle,
           pageNumber: chunk.pageNumber,
+          chunkIndex: chunk.chunkIndex ?? null,
           snippet,
         });
       }

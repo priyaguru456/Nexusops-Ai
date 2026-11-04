@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { Role, RequestStatus, ApprovalStatus, DocVisibility, DocStatus, Priority, RequestCategory } from "@prisma/client";
 import { authService } from "../../src/modules/auth/auth.service";
 import { approvalService } from "../../src/modules/approvals/approval.service";
+import { approvalController } from "../../src/modules/approvals/approval.controller";
 import { requestService } from "../../src/modules/requests/request.service";
 import { documentService } from "../../src/modules/documents/document.service";
 import { retrievalService, reciprocalRankFusion, buildPermissionFilterSql } from "../../src/modules/ai/retrieval.service";
@@ -585,6 +586,97 @@ describe("Core Services Unit Tests (Auth, Requests, Approvals, Documents, AI)", 
       await expect(
         approvalService.reassignStep("step-1", empUser as any, "usr-mgr-2")
       ).rejects.toThrow(/only admins can reassign/i);
+    });
+
+    it("bulkApproveSteps executes approvals and returns per-item results and summary", async () => {
+      const step1 = {
+        id: "step-1",
+        requestId: "req-1",
+        stepOrder: 1,
+        status: ApprovalStatus.PENDING,
+        approverRole: Role.MANAGER,
+        approverId: null,
+        request: {
+          id: "req-1",
+          title: "Hardware Upgrade",
+          priority: Priority.HIGH,
+          dueDate: new Date(),
+          status: RequestStatus.SUBMITTED,
+          requesterId: empUser.id,
+          requester: { departmentId: "dept-eng", managerId: "usr-mgr-1" },
+          approvalSteps: [{ id: "step-1", stepOrder: 1, status: ApprovalStatus.PENDING }],
+        },
+      };
+
+      vi.mocked(approvalRepository.findStepById).mockResolvedValueOnce(step1 as any);
+      vi.mocked(approvalRepository.updateStep).mockResolvedValueOnce({ ...step1, status: ApprovalStatus.APPROVED } as any);
+
+      // Step 2 is already decided (conflict)
+      const step2 = {
+        id: "step-2",
+        status: ApprovalStatus.APPROVED,
+      };
+      vi.mocked(approvalRepository.findStepById).mockResolvedValueOnce(step2 as any);
+
+      const result = await approvalService.bulkApproveSteps(["step-1", "step-2"], mgrUser as any, "Bulk approved");
+      expect(result.summary.total).toBe(2);
+      expect(result.summary.succeeded).toBe(1);
+      expect(result.summary.failed).toBe(1);
+      expect(result.results[0].success).toBe(true);
+      expect(result.results[0].stepId).toBe("step-1");
+      expect(result.results[1].success).toBe(false);
+      expect(result.results[1].stepId).toBe("step-2");
+      expect(result.results[1].error).toMatch(/already been decided/i);
+    });
+
+    it("bulkApproveSteps throws 403 Forbidden for EMPLOYEE role", async () => {
+      await expect(
+        approvalService.bulkApproveSteps(["step-1"], empUser as any)
+      ).rejects.toThrow(/only managers and admins can approve/i);
+    });
+
+    it("approvalController.getPendingApprovals returns steps and escalationAfterHours", async () => {
+      const mockReq: any = { user: mgrUser };
+      const mockRes: any = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+      };
+      const mockNext = vi.fn();
+      vi.mocked(approvalRepository.findActivePendingCandidateSteps).mockResolvedValueOnce([]);
+
+      await approvalController.getPendingApprovals(mockReq, mockRes, mockNext);
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        steps: [],
+        escalationAfterHours: 72,
+      });
+    });
+
+    it("approvalController.bulkApprove calls bulkApproveSteps and returns 200 with result", async () => {
+      const mockReq: any = {
+        user: mgrUser,
+        body: { stepIds: ["step-1"], comment: "Bulk notes" },
+      };
+      const mockRes: any = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+      };
+      const mockNext = vi.fn();
+
+      vi.spyOn(approvalService, "bulkApproveSteps").mockResolvedValueOnce({
+        results: [{ stepId: "step-1", success: true, step: {} as any }],
+        summary: { total: 1, succeeded: 1, failed: 0 },
+      });
+
+      await approvalController.bulkApprove(mockReq, mockRes, mockNext);
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          summary: { total: 1, succeeded: 1, failed: 0 },
+        })
+      );
     });
   });
 

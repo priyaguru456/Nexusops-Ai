@@ -46,7 +46,7 @@ export const updateRequestStatusSchema = z.object({
 });
 
 export const getRequestsQuerySchema = z.object({
-  status: z.nativeEnum(RequestStatus).optional(),
+  status: z.union([z.nativeEnum(RequestStatus), z.literal("PENDING_APPROVAL")]).optional(),
   priority: z.nativeEnum(Priority).optional(),
   category: z.nativeEnum(RequestCategory).optional(),
   startDate: z.coerce.date().optional(),

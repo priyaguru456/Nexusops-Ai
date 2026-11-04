@@ -2,10 +2,12 @@ import { defineConfig } from "vitest/config";
 import path from "path";
 
 export default defineConfig({
+  root: path.resolve(__dirname),
   test: {
     globals: true,
     environment: "node",
     fileParallelism: false, // Run API test files sequentially to avoid interference
+    cache: false,
     globalSetup: ["./tests/setup/globalSetup.ts"],
     setupFiles: ["./tests/setup/testSetup.ts"],
     coverage: {

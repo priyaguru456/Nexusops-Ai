@@ -1,3 +1,75 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* Screen vs Print utility visibility */
+@media screen {
+  .print-only {
+    display: none !important;
+  }
+}
+
+@media print {
+  @page {
+    size: auto;
+    margin: 12mm 15mm;
+  }
+
+  html,
+  body {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide app chrome, sidebars, buttons, controls, and toasts */
+  aside,
+  header,
+  nav,
+  button,
+  .no-print,
+  [role="tablist"],
+  [data-no-print="true"] {
+    display: none !important;
+  }
+
+  /* Reveal print-specific elements */
+  .print-only {
+    display: block !important;
+  }
+
+  /* Prevent awkward page break cuts across cards, KPI grids, and charts */
+  .print-avoid-break {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    margin-bottom: 1.5rem !important;
+  }
+
+  .print-full-width {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Ensure Recharts charts render fully and are not clipped */
+  .recharts-responsive-container {
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+  }
+
+  .recharts-wrapper {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+  }
+
+  .recharts-surface {
+    overflow: visible !important;
+  }
+
+  .recharts-tooltip-wrapper {
+    display: none !important;
+  }
+}

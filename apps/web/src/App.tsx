@@ -21,6 +21,7 @@ import { AiAssistantPage } from "./features/ai/AiAssistantPage";
 import { AnalyticsPage } from "./features/analytics/AnalyticsPage";
 import { UserManagementPage } from "./features/admin/UserManagementPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { NotificationsPage } from "./features/notifications/NotificationsPage";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
 
 export default function App(): React.JSX.Element {
@@ -53,6 +54,9 @@ export default function App(): React.JSX.Element {
 
                 {/* Settings route */}
                 <Route path="/settings" element={<SettingsPage />} />
+
+                {/* Notifications route */}
+                <Route path="/notifications" element={<NotificationsPage />} />
 
                 {/* Analytics route - scoped by role */}
                 <Route path="/analytics" element={<AnalyticsPage />} />

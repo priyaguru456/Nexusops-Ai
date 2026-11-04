@@ -5,6 +5,7 @@ import { profileApi } from "../features/auth/api";
 import { updateProfileSchema, changePasswordFormSchema } from "../features/auth/schemas";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
+import { BackButton } from "../components/ui/BackButton";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Badge } from "../components/ui/badge";
@@ -112,13 +113,16 @@ export function SettingsPage(): React.JSX.Element {
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       {/* Page Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-          Account Settings
-        </h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Manage your personal details, credentials, and account security.
-        </p>
+      <div className="flex items-center gap-3">
+        <BackButton />
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+            Account Settings
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+            Manage your personal details, credentials, and account security.
+          </p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-8">

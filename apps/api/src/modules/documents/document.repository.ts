@@ -45,13 +45,16 @@ export const documentRepository = {
       skip?: number;
       take?: number;
       orderBy?: Prisma.DocumentOrderByWithRelationInput;
-    }
+    } = {}
   ) {
+    const skip = options.skip !== undefined ? Math.max(0, Number(options.skip) || 0) : undefined;
+    const take = options.take !== undefined ? Math.max(1, Number(options.take) || 20) : undefined;
+
     return prisma.document.findMany({
       where,
-      skip: options.skip,
-      take: options.take,
-      orderBy: options.orderBy,
+      skip,
+      take,
+      orderBy: options.orderBy || { createdAt: "desc" },
       include: {
         department: true,
         uploadedBy: {
