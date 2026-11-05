@@ -6,6 +6,8 @@ export interface AuditLogItem {
   entityType: string;
   entityId: string | null;
   actorId: string | null;
+  summary?: string | null;
+  ipAddress?: string | null;
   createdAt: string;
   metadata?: Record<string, unknown> | null;
   actor?: {
@@ -20,6 +22,7 @@ export interface AuditLogQueryFilters {
   action?: string;
   entityType?: string;
   actorId?: string;
+  actor?: string;
   startDate?: string;
   endDate?: string;
   page?: number;

@@ -94,4 +94,21 @@ export const documentController = {
       next(error);
     }
   },
+
+  async uploadNewVersion(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) throw AppError.unauthorized();
+      if (!req.file) throw AppError.badRequest("New document file is required");
+
+      const id = req.params.id as string;
+      const doc = await documentService.uploadNewVersion(id, req.file, req.body, req.user);
+      res.status(200).json({
+        status: "success",
+        message: `Document updated to version ${doc.version}`,
+        document: doc,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
 };

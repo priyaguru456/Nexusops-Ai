@@ -174,21 +174,27 @@ Defines each sequential role approval required in an `ApprovalFlow`.
 ---
 
 ## 10. ApprovalStep
-Tracks the concrete execution and decision state of an approval step for a specific work request.
+Tracks the concrete execution and decision state of an approval step for work requests or other entity types (Leave, Expenses).
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `id` | TEXT / UUID | PRIMARY KEY | Unique approval step execution ID |
-| `requestId` | TEXT | FOREIGN KEY, NOT NULL | Reference to `WorkRequest(id)` (ON DELETE CASCADE) |
+| `entityType` | TEXT | NOT NULL, DEFAULT 'REQUEST' | Entity type (`REQUEST`, `LEAVE`, `EXPENSE`) |
+| `entityId` | TEXT | NOT NULL | Target entity identifier |
+| `requestId` | TEXT | FOREIGN KEY, NULLABLE | Reference to `WorkRequest(id)` for REQUEST entities (ON DELETE CASCADE) |
 | `stepOrder` | INTEGER | NOT NULL | Sequence index of the step |
 | `approverRole` | Role ENUM | NOT NULL | Required approver role |
 | `approverId` | TEXT | FOREIGN KEY, NULLABLE | Reference to `User(id)` who decided the step |
 | `status` | ApprovalStatus ENUM | NOT NULL, DEFAULT 'PENDING' | Status (`PENDING`, `APPROVED`, `REJECTED`, `SKIPPED`) |
 | `comment` | TEXT | NULLABLE | Reason or feedback entered by approver |
 | `decidedAt` | TIMESTAMP(3) | NULLABLE | Decision timestamp |
+| `activatedAt` | TIMESTAMP(3) | NULLABLE | When step became active in the sequence |
+| `escalatedAt` | TIMESTAMP(3) | NULLABLE | When step was escalated to next level |
 
 ### Constraints & Indexes
-- Unique constraint on `(requestId, stepOrder)`
+- Unique constraint on `(entityType, entityId, stepOrder)`
+- Unique constraint on `(requestId, stepOrder)` (backward compatibility)
+- Index on `(entityType, entityId)`
 - Index on `status`
 
 ---
@@ -306,9 +312,202 @@ Stores immutable security and operational audit trail records.
 | `action` | TEXT | NOT NULL | Action name (e.g. 'USER_LOGIN', 'REQUEST_STATUS_CHANGE') |
 | `entityType` | TEXT | NOT NULL | Affected entity type |
 | `entityId` | TEXT | NULLABLE | Affected entity ID |
-| `metadata` | JSONB | NULLABLE | Contextual JSON payload with event details |
+| `summary` | TEXT | NULLABLE | Human-readable event summary |
+| `metadata` | JSONB | NULLABLE | Contextual JSON payload with event details (passwords/tokens/secrets stripped) |
+| `ipAddress` | TEXT | NULLABLE | Origin IP address |
 | `createdAt` | TIMESTAMP(3) | NOT NULL, DEFAULT now() | Event timestamp |
 
 ### Indexes
 - Composite index on `(entityType, entityId)`
 - Index on `createdAt`
+- Index on `actorId`
+- Index on `action`
+
+---
+
+## 15. Announcement
+
+Stores company-wide and department-targeted operational announcements.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | TEXT / UUID | PRIMARY KEY | Unique announcement ID |
+| `title` | TEXT | NOT NULL | Announcement title |
+| `content` | TEXT | NOT NULL | Announcement content formatted as Markdown |
+| `priority` | ENUM (`NORMAL`, `URGENT`) | NOT NULL, DEFAULT `NORMAL` | Priority flag (URGENT dispatches system notifications) |
+| `targetDepartmentId` | TEXT | FOREIGN KEY, NULLABLE | Reference to `Department(id)` (NULL for company-wide) |
+| `authorId` | TEXT | FOREIGN KEY, NOT NULL | Reference to author `User(id)` |
+| `isPinned` | BOOLEAN | NOT NULL, DEFAULT `false` | Pin priority in feed |
+| `expiresAt` | TIMESTAMP(3) | NULLABLE | Optional expiration timestamp |
+| `createdAt` | TIMESTAMP(3) | NOT NULL, DEFAULT now() | Creation timestamp |
+| `updatedAt` | TIMESTAMP(3) | NOT NULL | Last update timestamp |
+
+### Indexes
+- Composite index on `(isPinned, createdAt)`
+- Index on `targetDepartmentId`
+- Index on `authorId`
+- Index on `priority`
+- Index on `expiresAt`
+
+---
+
+## 16. AnnouncementRead
+
+Tracks per-user read confirmations for announcements.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | TEXT / UUID | PRIMARY KEY | Unique read record ID |
+| `announcementId` | TEXT | FOREIGN KEY, NOT NULL | Reference to `Announcement(id)` (CASCADE on delete) |
+| `userId` | TEXT | FOREIGN KEY, NOT NULL | Reference to `User(id)` (CASCADE on delete) |
+| `readAt` | TIMESTAMP(3) | NOT NULL, DEFAULT now() | Timestamp when user opened the announcement |
+
+### Indexes & Constraints
+- Unique composite index on `(announcementId, userId)`
+- Index on `userId`
+- Index on `announcementId`
+
+---
+
+## 17. Asset
+
+Stores physical hardware and software assets managed by IT administrators.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | TEXT / UUID | PRIMARY KEY | Unique asset ID |
+| `name` | TEXT | NOT NULL | Asset display name (e.g. MacBook Pro M3) |
+| `type` | ENUM (`LAPTOP`, `MONITOR`, `PHONE`, `LICENSE`, `ACCESSORY`) | NOT NULL | Hardware / license category |
+| `serialNumber` | TEXT | UNIQUE, NULLABLE | Hardware serial number or license key (unique when present) |
+| `status` | ENUM (`AVAILABLE`, `ASSIGNED`, `IN_REPAIR`, `RETIRED`) | NOT NULL, DEFAULT `AVAILABLE` | Current lifecycle state |
+| `purchaseDate` | TIMESTAMP(3) | NULLABLE | Purchase date in UTC |
+| `warrantyExpiresAt` | TIMESTAMP(3) | NULLABLE | Warranty expiration date in UTC |
+| `notes` | TEXT | NULLABLE | Optional maintenance / asset notes |
+| `createdAt` | TIMESTAMP(3) | NOT NULL, DEFAULT now() | Creation timestamp |
+| `updatedAt` | TIMESTAMP(3) | NOT NULL | Last update timestamp |
+
+### Indexes & Constraints
+- Unique index on `serialNumber`
+- Index on `status`
+- Index on `type`
+- Index on `createdAt`
+- Index on `warrantyExpiresAt`
+
+---
+
+## 18. AssetAssignment
+
+Historical assignment log tracking past and active asset assignments to employees.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | TEXT / UUID | PRIMARY KEY | Unique assignment record ID |
+| `assetId` | TEXT | FOREIGN KEY, NOT NULL | Reference to `Asset(id)` (CASCADE on delete) |
+| `userId` | TEXT | FOREIGN KEY, NOT NULL | Reference to assignee `User(id)` (CASCADE on delete) |
+| `assignedAt` | TIMESTAMP(3) | NOT NULL, DEFAULT now() | Assignment timestamp |
+| `returnedAt` | TIMESTAMP(3) | NULLABLE | Return timestamp (NULL indicates active assignment) |
+| `assignedById` | TEXT | FOREIGN KEY, NOT NULL | Reference to assigner `User(id)` (IT Staff / Admin) |
+| `requestId` | TEXT | FOREIGN KEY, NULLABLE | Optional reference to linked `WorkRequest(id)` |
+| `notes` | TEXT | NULLABLE | Assignment notes or condition details |
+| `createdAt` | TIMESTAMP(3) | NOT NULL, DEFAULT now() | Creation timestamp |
+| `updatedAt` | TIMESTAMP(3) | NOT NULL | Last update timestamp |
+
+### Indexes & Constraints
+- Index on `assetId`
+- Index on `userId`
+- Index on `requestId`
+- Index on `assignedById`
+- Index on `returnedAt`
+- Index on `assignedAt`
+
+---
+
+## 19. Acknowledgement
+
+Compliance acknowledgement records tracking policy acceptance per user, per document, and per version.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | TEXT / UUID | PRIMARY KEY | Unique acknowledgement record ID |
+| `documentId` | TEXT | FOREIGN KEY, NOT NULL | Reference to `Document(id)` (CASCADE on delete) |
+| `userId` | TEXT | FOREIGN KEY, NOT NULL | Reference to `User(id)` (CASCADE on delete) |
+| `version` | INTEGER | NOT NULL | Exact policy document version acknowledged |
+| `acknowledgedAt` | TIMESTAMP(3) | NOT NULL, DEFAULT now() | UTC timestamp when policy version was acknowledged |
+
+### Indexes & Constraints
+- Unique composite constraint on `(documentId, userId, version)`
+- Index on `documentId`
+- Index on `userId`
+- Index on `(documentId, version)`
+
+---
+
+## 20. LeaveBalance
+
+Stores annualized leave balances and allowances per employee.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | TEXT / UUID | PRIMARY KEY | Unique leave balance ID |
+| `userId` | TEXT | FOREIGN KEY, NOT NULL | Reference to `User(id)` (CASCADE on delete) |
+| `year` | INTEGER | NOT NULL | Calendar year (e.g. 2026) |
+| `casualDays` | INTEGER | NOT NULL, DEFAULT 12 | Total allocated casual leave days |
+| `sickDays` | INTEGER | NOT NULL, DEFAULT 12 | Total allocated sick leave days |
+| `annualDays` | INTEGER | NOT NULL, DEFAULT 15 | Total allocated annual leave days |
+| `usedCasual` | INTEGER | NOT NULL, DEFAULT 0 | Consumed casual leave days |
+| `usedSick` | INTEGER | NOT NULL, DEFAULT 0 | Consumed sick leave days |
+| `usedAnnual` | INTEGER | NOT NULL, DEFAULT 0 | Consumed annual leave days |
+| `createdAt` | TIMESTAMP(3) | NOT NULL, DEFAULT now() | Creation timestamp |
+| `updatedAt` | TIMESTAMP(3) | NOT NULL | Last update timestamp |
+
+### Indexes & Constraints
+- Unique composite constraint on `(userId, year)`
+- Index on `userId`
+- Index on `year`
+
+---
+
+## 21. LeaveRequest
+
+Stores employee leave applications, lifecycle states, dates, and approvals.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | TEXT / UUID | PRIMARY KEY | Unique leave request ID |
+| `userId` | TEXT | FOREIGN KEY, NOT NULL | Reference to employee `User(id)` (CASCADE on delete) |
+| `type` | ENUM (`CASUAL`, `SICK`, `ANNUAL`, `UNPAID`) | NOT NULL | Type of leave requested |
+| `startDate` | TIMESTAMP(3) | NOT NULL | Inclusive start date in UTC |
+| `endDate` | TIMESTAMP(3) | NOT NULL | Inclusive end date in UTC |
+| `daysCount` | INTEGER | NOT NULL | Calculated working days (excluding weekends & holidays) |
+| `reason` | TEXT | NOT NULL | Employee explanation for leave request |
+| `status` | ENUM (`PENDING`, `APPROVED`, `REJECTED`, `CANCELLED`) | NOT NULL, DEFAULT `PENDING` | Request state |
+| `approverId` | TEXT | FOREIGN KEY, NULLABLE | Reference to deciding `User(id)` (Manager or Admin) |
+| `decidedAt` | TIMESTAMP(3) | NULLABLE | Decision timestamp in UTC |
+| `createdAt` | TIMESTAMP(3) | NOT NULL, DEFAULT now() | Creation timestamp |
+| `updatedAt` | TIMESTAMP(3) | NOT NULL | Last update timestamp |
+
+### Indexes & Constraints
+- Index on `userId`
+- Index on `status`
+- Index on `(startDate, endDate)`
+- Index on `createdAt`
+
+---
+
+## 22. Holiday
+
+Stores official organizational holidays excluded from working day counts.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | TEXT / UUID | PRIMARY KEY | Unique holiday record ID |
+| `name` | TEXT | NOT NULL | Official holiday name (e.g. Republic Day, Diwali) |
+| `date` | TIMESTAMP(3) | UNIQUE, NOT NULL | Holiday date in UTC |
+| `createdAt` | TIMESTAMP(3) | NOT NULL, DEFAULT now() | Creation timestamp |
+| `updatedAt` | TIMESTAMP(3) | NOT NULL | Last update timestamp |
+
+### Indexes & Constraints
+- Unique constraint on `date`
+- Index on `date`
+
+

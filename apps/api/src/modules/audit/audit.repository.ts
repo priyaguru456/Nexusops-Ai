@@ -6,6 +6,8 @@ export interface CreateAuditLogData {
   action: string;
   entityType: string;
   entityId?: string | null;
+  summary?: string | null;
+  ipAddress?: string | null;
   metadata?: Prisma.InputJsonValue;
 }
 
@@ -14,10 +16,11 @@ export interface AuditLogFilters {
   entityType?: string;
   entityId?: string;
   actorId?: string;
+  actor?: string;
   startDate?: Date;
   endDate?: Date;
-  page: number;
-  limit: number;
+  page?: number;
+  limit?: number;
 }
 
 export class AuditRepository {
@@ -28,28 +31,39 @@ export class AuditRepository {
         action: data.action,
         entityType: data.entityType,
         entityId: data.entityId ?? null,
+        summary: data.summary ?? null,
+        ipAddress: data.ipAddress ?? null,
         metadata: data.metadata ?? Prisma.JsonNull,
       },
     });
   }
 
-  async findAll(filters: AuditLogFilters) {
+  private buildWhere(filters: Omit<AuditLogFilters, "page" | "limit">): Prisma.AuditLogWhereInput {
     const where: Prisma.AuditLogWhereInput = {};
 
-    if (filters.action) {
-      where.action = { contains: filters.action, mode: "insensitive" };
+    if (filters.action?.trim()) {
+      where.action = { contains: filters.action.trim(), mode: "insensitive" };
     }
 
-    if (filters.entityType) {
-      where.entityType = { contains: filters.entityType, mode: "insensitive" };
+    if (filters.entityType?.trim()) {
+      where.entityType = { contains: filters.entityType.trim(), mode: "insensitive" };
     }
 
-    if (filters.entityId) {
-      where.entityId = filters.entityId;
+    if (filters.entityId?.trim()) {
+      where.entityId = filters.entityId.trim();
     }
 
-    if (filters.actorId) {
-      where.actorId = filters.actorId;
+    if (filters.actorId?.trim()) {
+      where.actorId = filters.actorId.trim();
+    }
+
+    if (filters.actor?.trim()) {
+      const searchTerm = filters.actor.trim();
+      where.OR = [
+        { actorId: searchTerm },
+        { actor: { name: { contains: searchTerm, mode: "insensitive" } } },
+        { actor: { email: { contains: searchTerm, mode: "insensitive" } } },
+      ];
     }
 
     if (filters.startDate || filters.endDate) {
@@ -58,6 +72,12 @@ export class AuditRepository {
       if (filters.endDate) dateCondition.lte = filters.endDate;
       where.createdAt = dateCondition;
     }
+
+    return where;
+  }
+
+  async findAll(filters: AuditLogFilters) {
+    const where = this.buildWhere(filters);
 
     const page = Math.max(1, Number(filters.page) || 1);
     const limit = Math.max(1, Math.min(100, Number(filters.limit) || 20));
@@ -93,6 +113,28 @@ export class AuditRepository {
       limit,
       totalPages: Math.max(1, Math.ceil(total / limit)),
     };
+  }
+
+  async findForExport(filters: Omit<AuditLogFilters, "page" | "limit">) {
+    const where = this.buildWhere(filters);
+
+    return prisma.auditLog.findMany({
+      where,
+      take: 5000,
+      orderBy: {
+        createdAt: "desc",
+      },
+      include: {
+        actor: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+          },
+        },
+      },
+    });
   }
 }
 

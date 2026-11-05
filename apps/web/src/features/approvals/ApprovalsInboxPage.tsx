@@ -54,6 +54,17 @@ const PRIORITY_ORDER: Record<Priority, number> = {
   LOW: 1,
 };
 
+export const getApprovalItemTitle = (step: PendingApprovalStep): string => {
+  return step.itemTitle || step.request?.title || `Approval #${step.id.slice(0, 8)}`;
+};
+
+export const getApprovalItemLink = (step: PendingApprovalStep): string => {
+  if (step.itemLink) return step.itemLink;
+  if (step.entityType === "LEAVE") return `/leaves/${step.entityId || step.id}`;
+  if (step.entityType === "EXPENSE") return `/expenses/${step.entityId || step.id}`;
+  return `/requests/${step.request?.id || step.entityId || step.id}`;
+};
+
 export const ApprovalsInboxPage: React.FC = () => {
   const { user } = useAuth();
   const { data, isLoading, error, refetch, isFetching } = usePendingApprovals();
@@ -95,6 +106,7 @@ export const ApprovalsInboxPage: React.FC = () => {
       const term = searchTerm.toLowerCase().trim();
       result = result.filter(
         (step) =>
+          (step.itemTitle && step.itemTitle.toLowerCase().includes(term)) ||
           step.request.title.toLowerCase().includes(term) ||
           step.request.category.toLowerCase().includes(term) ||
           step.request.requester.name.toLowerCase().includes(term) ||
@@ -522,7 +534,7 @@ export const ApprovalsInboxPage: React.FC = () => {
                           type="button"
                           onClick={() => handleToggleSelect(step.id)}
                           disabled={isRowDisabled}
-                          aria-label={`Select request ${step.request.title}`}
+                          aria-label={`Select request ${getApprovalItemTitle(step)}`}
                           className="mt-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors shrink-0"
                         >
                           {isSelected ? (
@@ -560,14 +572,14 @@ export const ApprovalsInboxPage: React.FC = () => {
                         {/* Title & Description */}
                         <div>
                           <Link
-                            to={`/requests/${step.request.id}`}
+                            to={getApprovalItemLink(step)}
                             className="text-base font-semibold text-slate-900 dark:text-slate-100 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors inline-flex items-center gap-1.5 max-w-full"
                           >
-                            <span className="truncate">{step.request.title}</span>
+                            <span className="truncate">{getApprovalItemTitle(step)}</span>
                             <ExternalLink className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                           </Link>
                           <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5">
-                            {step.request.description}
+                            {step.itemDescription ?? step.request.description}
                           </p>
                         </div>
 
@@ -613,7 +625,7 @@ export const ApprovalsInboxPage: React.FC = () => {
                     {/* Right: Inline Actions (Approve with Popover, Reject with Modal, View Details) */}
                     <div className="flex items-center gap-2 pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-100 dark:border-slate-800 shrink-0">
                       <Link
-                        to={`/requests/${step.request.id}`}
+                        to={getApprovalItemLink(step)}
                         className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200 transition-colors shadow-2xs h-8"
                       >
                         View Details
@@ -630,7 +642,7 @@ export const ApprovalsInboxPage: React.FC = () => {
                           setActiveApprovePopoverId(null);
                           setRejectStepTarget(step);
                         }}
-                        aria-label={`Reject request: ${step.request.title}`}
+                        aria-label={`Reject request: ${getApprovalItemTitle(step)}`}
                       >
                         <XCircle className="w-3.5 h-3.5" />
                         <span>Reject</span>

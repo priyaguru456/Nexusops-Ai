@@ -191,6 +191,12 @@ export class TaskRepository {
       totalPages: Math.max(1, Math.ceil(total / limit)),
     };
   }
+
+  async delete(id: string) {
+    return prisma.task.delete({
+      where: { id },
+    });
+  }
 }
 
 export const taskRepository = new TaskRepository();

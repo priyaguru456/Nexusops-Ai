@@ -72,6 +72,7 @@ export class RequestService {
       action: "REQUEST_CREATED",
       entityType: "WorkRequest",
       entityId: created.id,
+      summary: `Created request "${created.title}"`,
       metadata: {
         title: created.title,
         category: created.category,
@@ -133,6 +134,7 @@ export class RequestService {
       action: "REQUEST_UPDATED",
       entityType: "WorkRequest",
       entityId: id,
+      summary: `Updated request "${updated.title}"`,
       metadata: {
         updatedFields: Object.keys(data),
       },
@@ -173,6 +175,7 @@ export class RequestService {
       action: "REQUEST_SUBMITTED",
       entityType: "WorkRequest",
       entityId: id,
+      summary: `Submitted request "${request.title}" for approval`,
       metadata: {
         previousStatus: request.status,
         newStatus: RequestStatus.SUBMITTED,
@@ -212,6 +215,7 @@ export class RequestService {
       action: "REQUEST_CANCELLED",
       entityType: "WorkRequest",
       entityId: id,
+      summary: `Cancelled request "${request.title}"`,
       metadata: {
         previousStatus: request.status,
         newStatus: RequestStatus.CANCELLED,
@@ -251,6 +255,7 @@ export class RequestService {
       action: "REQUEST_STATUS_UPDATED",
       entityType: "WorkRequest",
       entityId: id,
+      summary: `Transitioned request "${request.title}" status to ${targetStatus}`,
       metadata: {
         previousStatus: request.status,
         newStatus: targetStatus,
@@ -287,6 +292,7 @@ export class RequestService {
       action: "REQUEST_ATTACHMENT_ADDED",
       entityType: "WorkRequest",
       entityId: id,
+      summary: `Added attachment "${file.originalname}" to request "${request.title}"`,
       metadata: {
         attachmentId: attachment.id,
         fileName: file.originalname,

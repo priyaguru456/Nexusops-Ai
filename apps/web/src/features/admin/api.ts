@@ -32,6 +32,14 @@ export const adminApi = {
     return res.data;
   },
 
+  exportAuditLogsCsv: async (filters: AuditLogQueryFilters = {}): Promise<Blob> => {
+    const res = await api.get("/audit-logs/export", {
+      params: filters,
+      responseType: "blob",
+    });
+    return res.data;
+  },
+
   getUsers: async (filters: UserQueryFilters = {}): Promise<PaginatedUsersResponse> => {
     const res = await api.get<PaginatedUsersResponse>("/users", {
       params: filters,

@@ -3,11 +3,12 @@ import {
   Role,
   ApprovalStatus,
   RequestStatus,
-  TaskStatus,
   Prisma,
   type WorkRequest,
 } from "@prisma/client";
 import { approvalRepository } from "./approval.repository";
+import { approvalHandlerRegistry } from "./handlers/approval-handler.registry";
+import type { ApprovalEntityDetails } from "./handlers/approval-handler.interface";
 import { auditService } from "../audit/audit.service";
 import { notificationService } from "../notifications/notification.service";
 import { AppError } from "../../lib/errors";
@@ -17,6 +18,7 @@ export class ApprovalService {
   /**
    * On submit, loads the approval flow for the request's category and amount,
    * then creates approval steps rows in order.
+   * Backward-compatible with existing WorkRequest workflow.
    */
   async initializeApprovalSteps(
     requestId: string,
@@ -28,42 +30,85 @@ export class ApprovalService {
     },
     tx?: Prisma.TransactionClient
   ) {
-    const amountVal = request.amount ? Number(request.amount) : null;
-    const flow = await approvalRepository.findApprovalFlow(request.category, amountVal);
+    const amountVal =
+      request.amount !== null && request.amount !== undefined
+        ? Number(request.amount)
+        : null;
+    const flow = await approvalRepository.findMatchingFlow(
+      request.category,
+      amountVal,
+      tx
+    );
 
-    let stepsToCreate: Array<{ stepOrder: number; approverRole: Role }> = [];
+    let stepsToCreate: Array<{
+      stepOrder: number;
+      approverRole: Role;
+      approverId?: string | null;
+    }> = [];
+    let matchedFlowId: string | null = null;
 
     if (flow && flow.steps.length > 0) {
+      matchedFlowId = flow.id;
       stepsToCreate = flow.steps.map((s) => ({
         stepOrder: s.stepOrder,
-        approverRole: s.approverRole,
+        approverRole: s.approverRole || (s as any).approver?.role || Role.MANAGER,
+        approverId: s.approverId ?? null,
       }));
     } else {
-      // Default single-step manager approval if no flow is registered
-      stepsToCreate = [{ stepOrder: 1, approverRole: Role.MANAGER }];
+      // Default single-step manager approval if no flow is registered or matches
+      stepsToCreate = [{ stepOrder: 1, approverRole: Role.MANAGER, approverId: null }];
     }
 
-    await approvalRepository.createApprovalSteps(requestId, stepsToCreate, tx);
+    const client = tx || prisma;
+
+    // Track which flow was matched for this request (enables in-use checks)
+    if (matchedFlowId) {
+      await client.workRequest.update({
+        where: { id: requestId },
+        data: { flowId: matchedFlowId },
+      });
+    }
+
+    await approvalRepository.createApprovalSteps(
+      {
+        entityType: "REQUEST",
+        entityId: requestId,
+        requestId,
+        steps: stepsToCreate,
+      },
+      undefined,
+      tx
+    );
 
     // Notify managers / first approvers
-    const client = tx || prisma;
-    const requester = await client.user.findUnique({
-      where: { id: request.requesterId },
-      select: { departmentId: true, managerId: true },
-    });
+    const firstStep = stepsToCreate[0];
+    let approverIds: string[] = [];
 
-    const eligibleApprovers = await client.user.findMany({
-      where: {
-        role: stepsToCreate[0].approverRole,
-        isActive: true,
-        ...(requester?.departmentId ? { departmentId: requester.departmentId } : {}),
-      },
-      select: { id: true },
-    });
+    if (firstStep.approverId) {
+      if (firstStep.approverId !== request.requesterId) {
+        approverIds = [firstStep.approverId];
+      }
+    } else {
+      const requester = await client.user.findUnique({
+        where: { id: request.requesterId },
+        select: { departmentId: true, managerId: true },
+      });
 
-    const approverIds = eligibleApprovers
-      .map((u) => u.id)
-      .filter((id) => id !== request.requesterId);
+      const eligibleApprovers = await client.user.findMany({
+        where: {
+          role: firstStep.approverRole,
+          isActive: true,
+          ...(requester?.departmentId
+            ? { departmentId: requester.departmentId }
+            : {}),
+        },
+        select: { id: true },
+      });
+
+      approverIds = eligibleApprovers
+        .map((u) => u.id)
+        .filter((id) => id !== request.requesterId);
+    }
 
     if (approverIds.length > 0) {
       await notificationService.notifyMultiple(
@@ -79,21 +124,104 @@ export class ApprovalService {
   }
 
   /**
+   * Generic step initialization for any entity type (e.g., Leave, Expense, or test entities).
+   */
+  async initializeApprovalStepsForEntity(
+    params: {
+      entityType: string;
+      entityId: string;
+      title: string;
+      requesterId: string;
+      steps: Array<{
+        stepOrder: number;
+        approverRole: Role;
+        approverId?: string | null;
+      }>;
+      requestId?: string | null;
+      link?: string;
+    },
+    tx?: Prisma.TransactionClient
+  ) {
+    const { entityType, entityId, title, requesterId, steps, requestId, link } = params;
+    const client = tx || prisma;
+
+    await approvalRepository.createApprovalSteps(
+      {
+        entityType,
+        entityId,
+        requestId: requestId ?? (entityType === "REQUEST" ? entityId : null),
+        steps,
+      },
+      undefined,
+      tx
+    );
+
+    if (steps.length === 0) return;
+
+    const firstStep = steps[0];
+    let approverIds: string[] = [];
+
+    if (firstStep.approverId) {
+      if (firstStep.approverId !== requesterId) {
+        approverIds = [firstStep.approverId];
+      }
+    } else {
+      const requester = await client.user.findUnique({
+        where: { id: requesterId },
+        select: { departmentId: true, managerId: true },
+      });
+
+      const eligibleApprovers = await client.user.findMany({
+        where: {
+          role: firstStep.approverRole,
+          isActive: true,
+          ...(requester?.departmentId
+            ? { departmentId: requester.departmentId }
+            : {}),
+        },
+        select: { id: true },
+      });
+
+      approverIds = eligibleApprovers
+        .map((u) => u.id)
+        .filter((id) => id !== requesterId);
+    }
+
+    if (approverIds.length > 0) {
+      const handler = approvalHandlerRegistry.get(entityType);
+      const targetLink = link || handler.getLink(entityId);
+      await notificationService.notifyMultiple(
+        approverIds,
+        "APPROVAL_REQUESTED",
+        "Approval Requested",
+        `Approval requested for "${title}"`,
+        targetLink,
+        handler.getEntityTypeName(),
+        entityId
+      );
+    }
+  }
+
+  /**
    * Verifies if a user is eligible to act on a given approval step.
    */
   private isUserEligibleForStep(
     step: {
       approverRole: Role;
       approverId: string | null;
-      request: {
+      request?: {
         requesterId: string;
-        requester: { departmentId: string | null; managerId: string | null };
-      };
+        requester?: { departmentId: string | null; managerId: string | null } | null;
+      } | null;
     },
-    user: AuthenticatedUser
+    user: AuthenticatedUser,
+    entityDetails?: ApprovalEntityDetails | null
   ): boolean {
-    // Requesters can never approve or decide on their own requests
-    if (step.request.requesterId === user.id) {
+    const requesterId =
+      step.request?.requesterId ?? entityDetails?.requesterId;
+
+    // Requesters can never approve or decide on their own items
+    if (requesterId && requesterId === user.id) {
       return false;
     }
 
@@ -109,11 +237,14 @@ export class ApprovalService {
 
     // Role check
     if (user.role === Role.MANAGER && step.approverRole === Role.MANAGER) {
+      const requesterObj = step.request?.requester ?? entityDetails?.requester;
+      if (!requesterObj) {
+        return true;
+      }
       // Manager department matching: same department or direct manager
-      const isDirectManager = step.request.requester.managerId === user.id;
+      const isDirectManager = requesterObj.managerId === user.id;
       const isSameDept = Boolean(
-        user.departmentId &&
-          step.request.requester.departmentId === user.departmentId
+        user.departmentId && requesterObj.departmentId === user.departmentId
       );
       return isDirectManager || isSameDept || !user.departmentId;
     }
@@ -128,22 +259,90 @@ export class ApprovalService {
   async getPendingApprovals(user: AuthenticatedUser) {
     const candidates = await approvalRepository.findActivePendingCandidateSteps();
 
-    // Filter to only steps that are currently active (all previous steps are approved)
-    const activeAndEligible = candidates.filter((step) => {
+    // Cache entity details per (entityType, entityId) to avoid duplicate queries
+    const detailsCache = new Map<string, ApprovalEntityDetails | null>();
+
+    const activeAndEligible: any[] = [];
+
+    for (const step of candidates) {
+      const entityType = step.entityType || "REQUEST";
+      const entityId = step.entityId || step.requestId || "";
+      const cacheKey = `${entityType}:${entityId}`;
+
+      let entityDetails: ApprovalEntityDetails | null = null;
+
+      if (step.request && entityType === "REQUEST") {
+        entityDetails = {
+          id: step.request.id || entityId,
+          title: step.request.title,
+          description: step.request.description,
+          requesterId: step.request.requesterId,
+          requester: step.request.requester,
+          status: step.request.status,
+          priority: step.request.priority,
+          category: step.request.category,
+          amount: step.request.amount,
+          dueDate: step.request.dueDate,
+          link: `/requests/${step.request.id || entityId}`,
+          approvalSteps: step.request.approvalSteps,
+        };
+      } else if (detailsCache.has(cacheKey)) {
+        entityDetails = detailsCache.get(cacheKey) || null;
+      } else {
+        if (approvalHandlerRegistry.has(entityType)) {
+          const handler = approvalHandlerRegistry.get(entityType);
+          entityDetails = await handler.getEntityDetails(entityId);
+          detailsCache.set(cacheKey, entityDetails);
+        } else {
+          detailsCache.set(cacheKey, null);
+        }
+      }
+
+      const requesterId = step.request?.requesterId ?? entityDetails?.requesterId;
+
       // 1. Check self-approval block
-      if (step.request.requesterId === user.id) return false;
+      if (requesterId && requesterId === user.id) {
+        continue;
+      }
 
       // 2. Check out-of-order: all steps with stepOrder < current must be APPROVED
-      const siblingSteps = step.request.approvalSteps || [];
-      const precedingSteps = siblingSteps.filter((s) => s.stepOrder < step.stepOrder);
+      let siblingSteps = step.request?.approvalSteps;
+      if (!siblingSteps || siblingSteps.length === 0) {
+        siblingSteps = await approvalRepository.findSiblingSteps(entityType, entityId);
+      }
+
+      const precedingSteps = siblingSteps.filter((s: any) => s.stepOrder < step.stepOrder);
       const allPrecedingApproved = precedingSteps.every(
-        (s) => s.status === ApprovalStatus.APPROVED
+        (s: any) => s.status === ApprovalStatus.APPROVED
       );
-      if (!allPrecedingApproved) return false;
+      if (!allPrecedingApproved) {
+        continue;
+      }
 
       // 3. Check role / assignee eligibility
-      return this.isUserEligibleForStep(step, user);
-    });
+      if (!this.isUserEligibleForStep(step, user, entityDetails)) {
+        continue;
+      }
+
+      // Decorate with generic UI fields while preserving backward-compatible request object
+      const handler = approvalHandlerRegistry.has(entityType)
+        ? approvalHandlerRegistry.get(entityType)
+        : null;
+
+      const itemTitle =
+        step.request?.title || entityDetails?.title || `Approval #${step.id.slice(0, 8)}`;
+      const itemLink =
+        entityDetails?.link || (handler ? handler.getLink(entityId) : `/requests/${entityId}`);
+
+      activeAndEligible.push({
+        ...step,
+        entityType,
+        entityId,
+        itemTitle,
+        itemLink,
+        itemDescription: step.request?.description ?? entityDetails?.description ?? null,
+      });
+    }
 
     return activeAndEligible;
   }
@@ -169,16 +368,45 @@ export class ApprovalService {
         );
       }
 
-      // Rule: Requester cannot approve their own request
-      if (step.request.requesterId === user.id) {
+      const entityType = step.entityType || "REQUEST";
+      const entityId = step.entityId || step.requestId || "";
+      const handler = approvalHandlerRegistry.get(entityType);
+
+      let entityDetails: ApprovalEntityDetails | null = null;
+      if (step.request && entityType === "REQUEST") {
+        entityDetails = {
+          id: step.request.id || entityId,
+          title: step.request.title,
+          description: step.request.description,
+          requesterId: step.request.requesterId,
+          requester: step.request.requester,
+          status: step.request.status,
+          priority: step.request.priority,
+          category: step.request.category,
+          amount: step.request.amount,
+          dueDate: step.request.dueDate,
+          link: handler.getLink(step.request.id || entityId),
+          approvalSteps: step.request.approvalSteps,
+        };
+      } else {
+        entityDetails = await handler.getEntityDetails(entityId, tx);
+      }
+
+      // Rule: Requester cannot approve their own item
+      const requesterId = step.request?.requesterId ?? entityDetails?.requesterId;
+      if (requesterId && requesterId === user.id) {
         throw AppError.forbidden("Requesters cannot approve their own requests");
       }
 
       // Rule: Steps run in order. Preceding steps must be APPROVED
-      const siblingSteps = step.request.approvalSteps || [];
-      const precedingSteps = siblingSteps.filter((s) => s.stepOrder < step.stepOrder);
+      let siblingSteps = step.request?.approvalSteps;
+      if (!siblingSteps || siblingSteps.length === 0) {
+        siblingSteps = await approvalRepository.findSiblingSteps(entityType, entityId, tx);
+      }
+
+      const precedingSteps = siblingSteps.filter((s: any) => s.stepOrder < step.stepOrder);
       const isPrecedingComplete = precedingSteps.every(
-        (s) => s.status === ApprovalStatus.APPROVED
+        (s: any) => s.status === ApprovalStatus.APPROVED
       );
 
       if (!isPrecedingComplete) {
@@ -188,7 +416,7 @@ export class ApprovalService {
       }
 
       // Permission check
-      if (!this.isUserEligibleForStep(step, user)) {
+      if (!this.isUserEligibleForStep(step, user, entityDetails)) {
         throw AppError.forbidden("You are not authorized to approve this step");
       }
 
@@ -204,123 +432,69 @@ export class ApprovalService {
         tx
       );
 
+      const itemTitle =
+        step.request?.title || entityDetails?.title || `Approval #${step.id.slice(0, 8)}`;
+
       await auditService.log({
         actorId: user.id,
         action: "APPROVAL_STEP_APPROVED",
         entityType: "ApprovalStep",
         entityId: stepId,
+        summary: `Approved step ${step.stepOrder} for ${handler.getEntityTypeName().toLowerCase()} "${itemTitle}"`,
         metadata: {
           stepOrder: step.stepOrder,
+          entityType,
+          entityId,
           requestId: step.requestId,
           comment: comment ?? null,
         },
       });
 
       // 2. Check if there are subsequent steps
-      const nextStep = siblingSteps.find((s) => s.stepOrder === step.stepOrder + 1);
+      const nextStep = siblingSteps.find((s: any) => s.stepOrder === step.stepOrder + 1);
 
       if (nextStep) {
-        // Next step is now active. Set activatedAt and move request to IN_REVIEW if not already.
+        // Next step is now active. Set activatedAt timestamp.
         await tx.approvalStep.update({
           where: { id: nextStep.id },
           data: { activatedAt: new Date() },
         });
 
-        if (step.request.status !== RequestStatus.IN_REVIEW) {
-          await tx.workRequest.update({
-            where: { id: step.requestId },
-            data: { status: RequestStatus.IN_REVIEW },
+        // Delegate intermediate progression to the entity handler
+        if (handler.onStepApproved) {
+          await handler.onStepApproved({
+            step: {
+              id: step.id,
+              entityType,
+              entityId,
+              requestId: step.requestId,
+              stepOrder: step.stepOrder,
+              approverRole: step.approverRole,
+              approverId: step.approverId,
+              request: step.request,
+            },
+            nextStep,
+            user,
+            comment,
+            tx,
           });
         }
-
-        // Notify next approvers
-        const eligibleNext = await tx.user.findMany({
-          where: {
-            role: nextStep.approverRole,
-            isActive: true,
-            ...(step.request.requester.departmentId
-              ? { departmentId: step.request.requester.departmentId }
-              : {}),
-          },
-          select: { id: true },
-        });
-
-        const nextApproverIds = eligibleNext
-          .map((u) => u.id)
-          .filter((id) => id !== step.request.requesterId);
-
-        await notificationService.notifyMultiple(
-          nextApproverIds,
-          "APPROVAL_REQUESTED",
-          "Approval Required",
-          `Step ${nextStep.stepOrder} approval needed for "${step.request.title}"`,
-          `/requests/${step.requestId}`,
-          "WorkRequest",
-          step.requestId
-        );
-
-        // Notify requester of progress
-        await notificationService.notify({
-          userId: step.request.requesterId,
-          type: "APPROVAL_DECISION",
-          title: "Request Update",
-          message: `Step ${step.stepOrder} of your request "${step.request.title}" was approved by ${user.name}`,
-          link: `/requests/${step.requestId}`,
-          entityType: "WorkRequest",
-          entityId: step.requestId,
-        });
       } else {
-        // Final approval step!
-        // Final approval sets request to APPROVED and AUTO-CREATES a task.
-        await tx.workRequest.update({
-          where: { id: step.requestId },
-          data: { status: RequestStatus.APPROVED },
-        });
-
-        const createdTask = await tx.task.create({
-          data: {
-            title: `Fulfill Request: ${step.request.title}`,
-            description: `Auto-generated task from approved request #${step.request.id.slice(0, 8)}.\n\n${step.request.description}`,
-            priority: step.request.priority,
-            status: TaskStatus.TODO,
-            dueDate: step.request.dueDate,
-            requestId: step.request.id,
-            assignedById: user.id,
-            assigneeId: null,
-          },
-        });
-
-        await auditService.log({
-          actorId: user.id,
-          action: "REQUEST_APPROVED",
-          entityType: "WorkRequest",
-          entityId: step.requestId,
-          metadata: {
-            finalStepOrder: step.stepOrder,
-            autoTaskId: createdTask.id,
-          },
-        });
-
-        await auditService.log({
-          actorId: user.id,
-          action: "TASK_CREATED",
-          entityType: "Task",
-          entityId: createdTask.id,
-          metadata: {
-            autoCreated: true,
+        // Final approval step! Delegate final approval to entity handler
+        await handler.onFinalApproved({
+          step: {
+            id: step.id,
+            entityType,
+            entityId,
             requestId: step.requestId,
+            stepOrder: step.stepOrder,
+            approverRole: step.approverRole,
+            approverId: step.approverId,
+            request: step.request,
           },
-        });
-
-        // Notify requester of approval and task creation
-        await notificationService.notify({
-          userId: step.request.requesterId,
-          type: "APPROVAL_DECISION",
-          title: "Request Approved",
-          message: `Your request "${step.request.title}" has been approved! A fulfillment task has been created.`,
-          link: `/requests/${step.requestId}`,
-          entityType: "WorkRequest",
-          entityId: step.requestId,
+          user,
+          comment,
+          tx,
         });
       }
 
@@ -330,7 +504,7 @@ export class ApprovalService {
 
   /**
    * POST /api/approvals/:stepId/reject
-   * Comment REQUIRED on reject. Rejection ends flow and marks request Rejected.
+   * Comment REQUIRED on reject. Rejection ends flow and marks entity Rejected.
    * Runs inside a database transaction.
    */
   async rejectStep(
@@ -354,16 +528,45 @@ export class ApprovalService {
         );
       }
 
-      // Requesters cannot reject their own request (they should cancel instead)
-      if (step.request.requesterId === user.id) {
+      const entityType = step.entityType || "REQUEST";
+      const entityId = step.entityId || step.requestId || "";
+      const handler = approvalHandlerRegistry.get(entityType);
+
+      let entityDetails: ApprovalEntityDetails | null = null;
+      if (step.request && entityType === "REQUEST") {
+        entityDetails = {
+          id: step.request.id || entityId,
+          title: step.request.title,
+          description: step.request.description,
+          requesterId: step.request.requesterId,
+          requester: step.request.requester,
+          status: step.request.status,
+          priority: step.request.priority,
+          category: step.request.category,
+          amount: step.request.amount,
+          dueDate: step.request.dueDate,
+          link: handler.getLink(step.request.id || entityId),
+          approvalSteps: step.request.approvalSteps,
+        };
+      } else {
+        entityDetails = await handler.getEntityDetails(entityId, tx);
+      }
+
+      // Requesters cannot reject their own item
+      const requesterId = step.request?.requesterId ?? entityDetails?.requesterId;
+      if (requesterId && requesterId === user.id) {
         throw AppError.forbidden("Requesters cannot decide on their own requests");
       }
 
       // Check preceding steps
-      const siblingSteps = step.request.approvalSteps || [];
-      const precedingSteps = siblingSteps.filter((s) => s.stepOrder < step.stepOrder);
+      let siblingSteps = step.request?.approvalSteps;
+      if (!siblingSteps || siblingSteps.length === 0) {
+        siblingSteps = await approvalRepository.findSiblingSteps(entityType, entityId, tx);
+      }
+
+      const precedingSteps = siblingSteps.filter((s: any) => s.stepOrder < step.stepOrder);
       const isPrecedingComplete = precedingSteps.every(
-        (s) => s.status === ApprovalStatus.APPROVED
+        (s: any) => s.status === ApprovalStatus.APPROVED
       );
 
       if (!isPrecedingComplete) {
@@ -372,7 +575,7 @@ export class ApprovalService {
         );
       }
 
-      if (!this.isUserEligibleForStep(step, user)) {
+      if (!this.isUserEligibleForStep(step, user, entityDetails)) {
         throw AppError.forbidden("You are not authorized to reject this step");
       }
 
@@ -389,11 +592,13 @@ export class ApprovalService {
       );
 
       // 2. Any subsequent steps wait/skip
-      const laterSteps = siblingSteps.filter((s) => s.stepOrder > step.stepOrder);
+      const laterSteps = siblingSteps.filter((s: any) => s.stepOrder > step.stepOrder);
       if (laterSteps.length > 0) {
         await tx.approvalStep.updateMany({
           where: {
-            requestId: step.requestId,
+            ...(step.requestId
+              ? { requestId: step.requestId }
+              : { entityType, entityId }),
             stepOrder: { gt: step.stepOrder },
           },
           data: {
@@ -402,44 +607,39 @@ export class ApprovalService {
         });
       }
 
-      // 3. Mark request as REJECTED
-      await tx.workRequest.update({
-        where: { id: step.requestId },
-        data: { status: RequestStatus.REJECTED },
-      });
+      const itemTitle =
+        step.request?.title || entityDetails?.title || `Approval #${step.id.slice(0, 8)}`;
 
       await auditService.log({
         actorId: user.id,
         action: "APPROVAL_STEP_REJECTED",
         entityType: "ApprovalStep",
         entityId: stepId,
+        summary: `Rejected step ${step.stepOrder} for ${handler.getEntityTypeName().toLowerCase()} "${itemTitle}"`,
         metadata: {
           stepOrder: step.stepOrder,
+          entityType,
+          entityId,
           requestId: step.requestId,
           comment: comment.trim(),
         },
       });
 
-      await auditService.log({
-        actorId: user.id,
-        action: "REQUEST_REJECTED",
-        entityType: "WorkRequest",
-        entityId: step.requestId,
-        metadata: {
-          rejectedAtStep: step.stepOrder,
-          reason: comment.trim(),
+      // 3. Delegate rejection execution to entity handler
+      await handler.onRejected({
+        step: {
+          id: step.id,
+          entityType,
+          entityId,
+          requestId: step.requestId,
+          stepOrder: step.stepOrder,
+          approverRole: step.approverRole,
+          approverId: step.approverId,
+          request: step.request,
         },
-      });
-
-      // Notify requester
-      await notificationService.notify({
-        userId: step.request.requesterId,
-        type: "APPROVAL_DECISION",
-        title: "Request Rejected",
-        message: `Your request "${step.request.title}" was rejected by ${user.name}: "${comment.trim()}"`,
-        link: `/requests/${step.requestId}`,
-        entityType: "WorkRequest",
-        entityId: step.requestId,
+        user,
+        comment: comment.trim(),
+        tx,
       });
 
       return updatedStep;
@@ -479,12 +679,22 @@ export class ApprovalService {
       approverId: newApproverId,
     });
 
+    const entityType = step.entityType || "REQUEST";
+    const entityId = step.entityId || step.requestId || "";
+    const handler = approvalHandlerRegistry.get(entityType);
+    const itemTitle =
+      step.request?.title ||
+      (entityId ? (await handler.getEntityDetails(entityId))?.title : null) ||
+      `Item #${entityId.slice(0, 8)}`;
+
     await auditService.log({
       actorId: user.id,
       action: "APPROVAL_STEP_REASSIGNED",
       entityType: "ApprovalStep",
       entityId: stepId,
       metadata: {
+        entityType,
+        entityId,
         previousApproverId: step.approverId,
         newApproverId,
       },
@@ -494,10 +704,10 @@ export class ApprovalService {
       userId: newApproverId,
       type: "APPROVAL_REQUESTED",
       title: "Approval Assigned",
-      message: `You have been delegated to approve "${step.request.title}"`,
-      link: `/requests/${step.requestId}`,
-      entityType: "WorkRequest",
-      entityId: step.requestId,
+      message: `You have been delegated to approve "${itemTitle}"`,
+      link: handler.getLink(entityId),
+      entityType: handler.getEntityTypeName(),
+      entityId,
     });
 
     return updated;

@@ -22,6 +22,9 @@ import { AnalyticsPage } from "./features/analytics/AnalyticsPage";
 import { UserManagementPage } from "./features/admin/UserManagementPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { NotificationsPage } from "./features/notifications/NotificationsPage";
+import { AnnouncementsPage } from "./features/announcements/AnnouncementsPage";
+import { DirectoryPage } from "./features/directory/DirectoryPage";
+import { AssetsListPage } from "./features/assets/AssetsListPage";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
 
 export default function App(): React.JSX.Element {
@@ -58,8 +61,18 @@ export default function App(): React.JSX.Element {
                 {/* Notifications route */}
                 <Route path="/notifications" element={<NotificationsPage />} />
 
+                {/* Announcements feed route */}
+                <Route path="/announcements" element={<AnnouncementsPage />} />
+
                 {/* Analytics route - scoped by role */}
                 <Route path="/analytics" element={<AnalyticsPage />} />
+
+                {/* Company Directory route - accessible to all authenticated roles */}
+                <Route path="/directory" element={<DirectoryPage />} />
+
+                {/* Assets route */}
+                <Route path="/assets" element={<AssetsListPage />} />
+                <Route path="/profile" element={<Navigate to="/settings" replace />} />
 
                 {/* Manager and Admin routes */}
                 <Route
@@ -82,6 +95,14 @@ export default function App(): React.JSX.Element {
                 />
                 <Route
                   path="/admin/audit"
+                  element={
+                    <ProtectedRoute roles={["ADMIN"]}>
+                      <AuditLogPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/audit-log"
                   element={
                     <ProtectedRoute roles={["ADMIN"]}>
                       <AuditLogPage />

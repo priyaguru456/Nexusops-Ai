@@ -114,6 +114,8 @@ erDiagram
 
     ApprovalStep {
         string id PK
+        string entityType
+        string entityId
         string requestId FK
         int stepOrder
         Role approverRole
@@ -121,6 +123,8 @@ erDiagram
         ApprovalStatus status
         string comment
         datetime decidedAt
+        datetime activatedAt
+        datetime escalatedAt
     }
 
     Document {

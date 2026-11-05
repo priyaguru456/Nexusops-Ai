@@ -105,6 +105,7 @@ export class TaskService {
       action: "TASK_CREATED",
       entityType: "Task",
       entityId: task.id,
+      summary: `Created task "${task.title}"`,
       metadata: {
         title: task.title,
         status: task.status,
@@ -171,6 +172,7 @@ export class TaskService {
       action: "TASK_UPDATED",
       entityType: "Task",
       entityId: id,
+      summary: `Updated task "${updated.title}"`,
       metadata: {
         previousStatus: task.status,
         newStatus: data.status ?? task.status,
@@ -202,6 +204,7 @@ export class TaskService {
       action: "TASK_ASSIGNED",
       entityType: "Task",
       entityId: id,
+      summary: `Assigned task "${task.title}" to ${assigneeId ? "user" : "unassigned"}`,
       metadata: {
         previousAssigneeId,
         newAssigneeId: assigneeId,
@@ -222,6 +225,39 @@ export class TaskService {
     }
 
     return updated;
+  }
+
+  /**
+   * Delete a task. Only creator, manager, or admin can delete.
+   */
+  async deleteTask(id: string, user: AuthenticatedUser) {
+    const task = await taskRepository.findById(id);
+    if (!task) {
+      throw AppError.notFound("Task not found");
+    }
+
+    const isCreator = task.assignedById === user.id;
+    const isManagerOrAdmin = user.role === Role.MANAGER || user.role === Role.ADMIN;
+    if (!isCreator && !isManagerOrAdmin) {
+      throw AppError.forbidden("You do not have permission to delete this task");
+    }
+
+    await taskRepository.delete(id);
+
+    await auditService.log({
+      actorId: user.id,
+      action: "TASK_DELETED",
+      entityType: "Task",
+      entityId: id,
+      summary: `Deleted task "${task.title}"`,
+      metadata: {
+        title: task.title,
+        status: task.status,
+        assigneeId: task.assigneeId,
+      },
+    });
+
+    return { success: true };
   }
 }
 

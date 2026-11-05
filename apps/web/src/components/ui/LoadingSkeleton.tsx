@@ -55,6 +55,21 @@ export function KanbanSkeleton(): React.JSX.Element {
   );
 }
 
+export function CardSkeleton(): React.JSX.Element {
+  return (
+    <div className="bg-white dark:bg-slate-800/80 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+      <div className="flex items-center gap-3">
+        <LoadingSkeleton className="h-12 w-12 rounded-full" />
+        <div className="space-y-1 flex-1">
+          <LoadingSkeleton className="h-4 w-3/4" />
+          <LoadingSkeleton className="h-3 w-1/2" />
+        </div>
+      </div>
+      <LoadingSkeleton className="h-3 w-full" />
+    </div>
+  );
+}
+
 export function DetailSkeleton(): React.JSX.Element {
   return (
     <div className="space-y-6">

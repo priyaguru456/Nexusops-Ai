@@ -24,6 +24,11 @@ export interface ApprovalStepItem {
 }
 
 export interface PendingApprovalStep extends ApprovalStepItem {
+  entityType?: string;
+  entityId?: string;
+  itemTitle?: string;
+  itemLink?: string;
+  itemDescription?: string | null;
   request: {
     id: string;
     title: string;

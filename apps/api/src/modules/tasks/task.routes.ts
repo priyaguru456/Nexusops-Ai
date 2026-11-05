@@ -45,3 +45,9 @@ taskRouter.patch(
   validate({ params: taskIdParamSchema, body: assignTaskSchema }),
   (req, res, next) => taskController.assignTask(req, res, next)
 );
+
+taskRouter.delete(
+  "/:id",
+  validate({ params: taskIdParamSchema }),
+  (req, res, next) => taskController.deleteTask(req, res, next)
+);

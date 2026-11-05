@@ -29,7 +29,16 @@ vi.mock("../../src/lib/prisma", () => {
       findMany: vi.fn().mockResolvedValue([]),
     },
     workRequest: {
-      findUnique: vi.fn().mockResolvedValue(null),
+      findUnique: vi.fn().mockImplementation(({ where }: any) =>
+        Promise.resolve({
+          id: where?.id || "req-1",
+          title: "Hardware Upgrade",
+          description: "New monitor",
+          status: "SUBMITTED",
+          requesterId: "usr-emp-1",
+          approvalSteps: [],
+        })
+      ),
       update: vi.fn().mockResolvedValue({}),
     },
     approvalStep: {

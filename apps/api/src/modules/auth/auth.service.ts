@@ -95,6 +95,8 @@ export class AuthService {
       action: "USER_LOGIN",
       entityType: "User",
       entityId: user.id,
+      summary: `User ${user.email} logged in`,
+      ipAddress: meta.ip || null,
       metadata: {
         ip: meta.ip || "unknown",
         userAgent: meta.userAgent || "unknown",

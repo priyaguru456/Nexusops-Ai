@@ -36,6 +36,7 @@ export class CommentService {
       action: "COMMENT_CREATED",
       entityType: "Comment",
       entityId: comment.id,
+      summary: `Added comment on ${data.entityType} #${data.entityId.slice(0, 8)}`,
       metadata: {
         targetEntityType: data.entityType,
         targetEntityId: data.entityId,

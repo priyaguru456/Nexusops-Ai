@@ -7,6 +7,7 @@ export const documentRepository = {
       data,
       include: {
         department: true,
+        targetDepartment: true,
         uploadedBy: {
           select: {
             id: true,
@@ -23,6 +24,7 @@ export const documentRepository = {
       where: { id },
       include: {
         department: true,
+        targetDepartment: true,
         uploadedBy: {
           select: {
             id: true,
@@ -57,6 +59,7 @@ export const documentRepository = {
       orderBy: options.orderBy || { createdAt: "desc" },
       include: {
         department: true,
+        targetDepartment: true,
         uploadedBy: {
           select: {
             id: true,

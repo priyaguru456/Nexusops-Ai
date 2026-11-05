@@ -1,9 +1,10 @@
 import { prisma } from "../../lib/prisma";
-import { Role, ApprovalStatus, Prisma } from "@prisma/client";
+import { Role, ApprovalStatus } from "@prisma/client";
 import { env } from "../../config/env";
 import { logger } from "../../lib/logger";
 import { notificationService } from "../notifications/notification.service";
 import { auditService } from "../audit/audit.service";
+import { approvalHandlerRegistry } from "./handlers/approval-handler.registry";
 
 export interface EscalationResult {
   checkedCount: number;
@@ -22,7 +23,7 @@ export class ApprovalEscalationService {
    * 3. Sends a reminder notification to the eligible/assigned approver(s).
    * 4. Writes an APPROVAL_STEP_ESCALATED audit log entry.
    *
-   * Note: Escalation NEVER auto-approves or alters the request's status.
+   * Note: Escalation NEVER auto-approves or alters the entity's status.
    */
   async checkAndEscalateOverdueApprovals(
     thresholdHours: number = env.ESCALATION_AFTER_HOURS
@@ -75,14 +76,32 @@ export class ApprovalEscalationService {
     const escalatedStepIds: string[] = [];
 
     for (const step of overdueCandidates) {
-      // Safety check: ensure all earlier steps in the request are APPROVED
-      const siblingSteps = step.request.approvalSteps || [];
+      const entityType = step.entityType || "REQUEST";
+      const entityId = step.entityId || step.requestId || "";
+
+      // Safety check: ensure all earlier steps are APPROVED
+      let siblingSteps = step.request?.approvalSteps;
+      if (!siblingSteps || siblingSteps.length === 0) {
+        siblingSteps = await prisma.approvalStep.findMany({
+          where: {
+            entityType,
+            entityId,
+          },
+          select: {
+            id: true,
+            stepOrder: true,
+            status: true,
+          },
+          orderBy: { stepOrder: "asc" },
+        });
+      }
+
       const precedingSteps = siblingSteps.filter((s) => s.stepOrder < step.stepOrder);
       const isActuallyActive = precedingSteps.every(
         (s) => s.status === ApprovalStatus.APPROVED
       );
 
-      // If an earlier step is somehow not approved, this step is not active yet; skip
+      // If an earlier step is not approved, this step is not active yet; skip
       if (!isActuallyActive) {
         continue;
       }
@@ -135,6 +154,19 @@ export class ApprovalEscalationService {
         return false;
       }
 
+      const entityType = step.entityType || "REQUEST";
+      const entityId = step.entityId || step.requestId || "";
+      const handler = approvalHandlerRegistry.get(entityType);
+      const entityDetails = await handler.getEntityDetails(entityId, tx);
+
+      const itemTitle =
+        entityDetails?.title || step.request?.title || `Approval #${step.id.slice(0, 8)}`;
+      const link = entityDetails?.link || handler.getLink(entityId);
+      const entityTypeName = handler.getEntityTypeName();
+      const requesterId = entityDetails?.requesterId ?? step.request?.requesterId ?? "";
+      const departmentId =
+        entityDetails?.requester?.departmentId ?? step.request?.requester?.departmentId ?? null;
+
       // 2. Identify active admins for next-level escalation
       const activeAdmins = await tx.user.findMany({
         where: {
@@ -146,7 +178,7 @@ export class ApprovalEscalationService {
 
       const adminUserIds = activeAdmins
         .map((a) => a.id)
-        .filter((id) => id !== step.request.requesterId);
+        .filter((id) => id !== requesterId);
 
       // 3. Identify current approvers for reminder
       let approverUserIds: string[] = [];
@@ -157,16 +189,14 @@ export class ApprovalEscalationService {
           where: {
             role: step.approverRole,
             isActive: true,
-            ...(step.request.requester.departmentId
-              ? { departmentId: step.request.requester.departmentId }
-              : {}),
+            ...(departmentId ? { departmentId } : {}),
           },
           select: { id: true },
         });
 
         approverUserIds = eligibleApprovers
           .map((u) => u.id)
-          .filter((id) => id !== step.request.requesterId);
+          .filter((id) => id !== requesterId);
       }
 
       // 4. Send Next-Level Escalation notification to Admins
@@ -175,10 +205,10 @@ export class ApprovalEscalationService {
           adminUserIds,
           "APPROVAL_ESCALATED",
           "Approval Overdue Escalation",
-          `ESCALATION: Step ${step.stepOrder} for request "${step.request.title}" is overdue (pending > ${thresholdHours}h). Admin attention required.`,
-          `/requests/${step.requestId}`,
-          "WorkRequest",
-          step.requestId
+          `ESCALATION: Step ${step.stepOrder} for ${entityTypeName === "WorkRequest" ? "request" : entityTypeName.toLowerCase()} "${itemTitle}" is overdue (pending > ${thresholdHours}h). Admin attention required.`,
+          link,
+          entityTypeName,
+          entityId
         );
       }
 
@@ -192,10 +222,10 @@ export class ApprovalEscalationService {
           reminderTargetIds,
           "APPROVAL_REMINDER",
           "Approval Reminder",
-          `REMINDER: Step ${step.stepOrder} for request "${step.request.title}" has been pending for over ${thresholdHours} hours and requires your decision.`,
-          `/requests/${step.requestId}`,
-          "WorkRequest",
-          step.requestId
+          `REMINDER: Step ${step.stepOrder} for ${entityTypeName === "WorkRequest" ? "request" : entityTypeName.toLowerCase()} "${itemTitle}" has been pending for over ${thresholdHours} hours and requires your decision.`,
+          link,
+          entityTypeName,
+          entityId
         );
       }
 
@@ -206,6 +236,8 @@ export class ApprovalEscalationService {
         entityType: "ApprovalStep",
         entityId: step.id,
         metadata: {
+          entityType,
+          entityId,
           requestId: step.requestId,
           stepOrder: step.stepOrder,
           thresholdHours,
@@ -219,6 +251,8 @@ export class ApprovalEscalationService {
       logger.warn(
         {
           stepId: step.id,
+          entityType,
+          entityId,
           requestId: step.requestId,
           stepOrder: step.stepOrder,
           thresholdHours,

@@ -347,4 +347,62 @@ describe("ApprovalsInboxPage Component Tests", () => {
     expect(screen.queryByText("New Mac Laptop for DevOps")).not.toBeInTheDocument();
     expect(screen.getByText("Team Offsite Travel Budget")).toBeInTheDocument();
   });
+
+  it("renders generic item with custom entity title and link", async () => {
+    const genericStep: PendingApprovalStep = {
+      id: "step-leave-1",
+      stepOrder: 1,
+      approverRole: "MANAGER",
+      approverId: null,
+      status: "PENDING",
+      comment: null,
+      decidedAt: null,
+      activatedAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+      escalatedAt: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      entityType: "LEAVE",
+      entityId: "leave-101",
+      itemTitle: "Annual Leave (5 days)",
+      itemLink: "/leaves/leave-101",
+      request: {
+        id: "leave-101",
+        title: "Annual Leave (5 days)",
+        description: "Family trip",
+        category: "HR",
+        priority: "MEDIUM",
+        status: "SUBMITTED",
+        amount: null,
+        dueDate: null,
+        requesterId: "usr-emp-1",
+        createdAt: new Date().toISOString(),
+        requester: {
+          id: "usr-emp-1",
+          name: "Alice Engineer",
+          email: "alice@company.com",
+          role: "EMPLOYEE",
+          departmentId: "dept-1",
+          department: { id: "dept-1", name: "Engineering" },
+        },
+        approvalSteps: [],
+      },
+    };
+
+    (HooksModule.usePendingApprovals as any).mockReturnValue({
+      data: {
+        steps: [genericStep],
+        escalationAfterHours: 72,
+      },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    });
+
+    renderComponent();
+
+    expect(screen.getByText("Annual Leave (5 days)")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /annual leave/i });
+    expect(link).toHaveAttribute("href", "/leaves/leave-101");
+  });
 });

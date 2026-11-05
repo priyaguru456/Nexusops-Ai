@@ -75,11 +75,25 @@ enum ChatRole {
   ASSISTANT
 }
 
+enum AnnouncementPriority {
+  NORMAL
+  URGENT
+}
+
+enum PolicyCategory {
+  HR
+  SECURITY
+  TRAVEL
+  OTHER
+}
+
 model Department {
-  id        String     @id @default(uuid())
-  name      String     @unique
-  users     User[]
-  documents Document[]
+  id            String         @id @default(uuid())
+  name          String         @unique
+  users         User[]
+  documents     Document[]
+  announcements Announcement[]
+  policyDocuments Document[]   @relation("TargetDepartment")
 }
 
 model User {
@@ -104,11 +118,20 @@ model User {
   tasksAssigned Task[]         @relation("Assignee")
   tasksCreated  Task[]         @relation("AssignedBy")
   approvalsMade ApprovalStep[]
+  approvalFlowStepsAssigned ApprovalFlowStep[] @relation("FlowStepApprover")
   documents     Document[]
   chatSessions  ChatSession[]
   notifications Notification[]
   comments      Comment[]
   auditLogs     AuditLog[]
+  announcementsCreated Announcement[]     @relation("AnnouncementAuthor")
+  announcementReads    AnnouncementRead[]
+  assignedAssets       AssetAssignment[]      @relation("UserAssetAssignments")
+  assetsGiven          AssetAssignment[]      @relation("AdminAssignedAssets")
+  acknowledgements     Acknowledgement[]
+  leaveBalances        LeaveBalance[]         @relation("UserLeaveBalances")
+  leaveRequests        LeaveRequest[]         @relation("EmployeeLeaves")
+  decidedLeaves        LeaveRequest[]         @relation("DecidedLeaves")
 
   @@index([role])
   @@index([createdAt])
@@ -146,9 +169,13 @@ model WorkRequest {
   attachments   RequestAttachment[]
   tasks         Task[]
   approvalSteps ApprovalStep[]
+  flowId        String?
+  flow          ApprovalFlow?       @relation(fields: [flowId], references: [id], onDelete: SetNull)
+  assetAssignments AssetAssignment[]
 
   @@index([status])
   @@index([requesterId])
+  @@index([flowId])
   @@index([createdAt])
   @@index([status, createdAt])
   @@index([requesterId, createdAt])
@@ -206,24 +233,41 @@ model ApprovalFlow {
   id        String             @id @default(uuid())
   name      String
   category  RequestCategory
-  minAmount Decimal?           @db.Decimal(12, 2)
+  minAmount Decimal            @default(0) @db.Decimal(12, 2)
+  maxAmount Decimal?           @db.Decimal(12, 2)
+  isActive  Boolean            @default(true)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
   steps     ApprovalFlowStep[]
+  requests  WorkRequest[]
+
+  @@index([category, isActive])
+  @@index([createdAt])
 }
 
 model ApprovalFlowStep {
-  id           String       @id @default(uuid())
+  id           String        @id @default(uuid())
   flowId       String
-  flow         ApprovalFlow @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  flow         ApprovalFlow  @relation(fields: [flowId], references: [id], onDelete: Cascade)
   stepOrder    Int
-  approverRole Role
+  approverRole Role?
+  approverId   String?
+  approver     User?         @relation("FlowStepApprover", fields: [approverId], references: [id], onDelete: SetNull)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   @@unique([flowId, stepOrder])
+  @@index([flowId])
+  @@index([approverId])
 }
 
 model ApprovalStep {
   id           String         @id @default(uuid())
-  requestId    String
-  request      WorkRequest    @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  entityType   String         @default("REQUEST")
+  entityId     String
+  requestId    String?
+  request      WorkRequest?   @relation(fields: [requestId], references: [id], onDelete: Cascade)
   stepOrder    Int
   approverRole Role
   approverId   String?
@@ -236,10 +280,11 @@ model ApprovalStep {
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
-  @@unique([requestId, stepOrder])
+  @@unique([entityType, entityId, stepOrder])
   @@index([status])
   @@index([approverId])
   @@index([createdAt])
+  @@index([entityType, entityId])
   @@index([approverId, status, decidedAt])
   @@index([status, activatedAt, escalatedAt])
 }
@@ -256,18 +301,40 @@ model Document {
   status       DocStatus     @default(UPLOADED)
   errorMessage String?
   version      Int           @default(1)
+  isPolicy     Boolean       @default(false)
+  isMandatory  Boolean       @default(false)
   createdAt    DateTime      @default(now())
 
   departmentId String?
   department   Department? @relation(fields: [departmentId], references: [id])
+  targetDepartmentId String?
+  targetDepartment   Department? @relation("TargetDepartment", fields: [targetDepartmentId], references: [id])
   uploadedById String
   uploadedBy   User        @relation(fields: [uploadedById], references: [id])
 
   chunks DocumentChunk[]
+  acknowledgements Acknowledgement[]
 
   @@index([status])
   @@index([uploadedById])
   @@index([createdAt])
+  @@index([isPolicy])
+  @@index([targetDepartmentId])
+}
+
+model Acknowledgement {
+  id             String    @id @default(uuid())
+  documentId     String
+  document       Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  version        Int
+  acknowledgedAt DateTime  @default(now())
+
+  @@unique([documentId, userId, version])
+  @@index([documentId])
+  @@index([userId])
+  @@index([documentId, version])
 }
 
 model DocumentChunk {
@@ -340,9 +407,173 @@ model AuditLog {
   action     String
   entityType String
   entityId   String?
+  summary    String?
   metadata   Json?
+  ipAddress  String?
   createdAt  DateTime @default(now())
 
   @@index([entityType, entityId])
   @@index([createdAt])
+  @@index([actorId])
+  @@index([action])
+}
+
+model Announcement {
+  id                 String               @id @default(uuid())
+  title              String
+  content            String               @db.Text
+  priority           AnnouncementPriority @default(NORMAL)
+  targetDepartmentId String?
+  targetDepartment   Department?          @relation(fields: [targetDepartmentId], references: [id])
+  authorId           String
+  author             User                 @relation("AnnouncementAuthor", fields: [authorId], references: [id])
+  isPinned           Boolean              @default(false)
+  expiresAt          DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  reads              AnnouncementRead[]
+
+  @@index([isPinned, createdAt])
+  @@index([targetDepartmentId])
+  @@index([authorId])
+  @@index([priority])
+  @@index([expiresAt])
+}
+
+model AnnouncementRead {
+  id             String       @id @default(uuid())
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readAt         DateTime     @default(now())
+
+  @@unique([announcementId, userId])
+  @@index([userId])
+  @@index([announcementId])
+}
+
+enum AssetType {
+  LAPTOP
+  MONITOR
+  PHONE
+  LICENSE
+  ACCESSORY
+}
+
+enum AssetStatus {
+  AVAILABLE
+  ASSIGNED
+  IN_REPAIR
+  RETIRED
+}
+
+model Asset {
+  id                String            @id @default(uuid())
+  name              String
+  type              AssetType
+  serialNumber      String?           @unique
+  status            AssetStatus       @default(AVAILABLE)
+  purchaseDate      DateTime?
+  warrantyExpiresAt DateTime?
+  notes             String?           @db.Text
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  assignments       AssetAssignment[]
+
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
+  @@index([warrantyExpiresAt])
+}
+
+model AssetAssignment {
+  id           String       @id @default(uuid())
+  assetId      String
+  asset        Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User         @relation("UserAssetAssignments", fields: [userId], references: [id], onDelete: Cascade)
+  assignedAt   DateTime     @default(now())
+  returnedAt   DateTime?
+  assignedById String
+  assignedBy   User         @relation("AdminAssignedAssets", fields: [assignedById], references: [id], onDelete: Restrict)
+  requestId    String?
+  request      WorkRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  notes        String?      @db.Text
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([assetId])
+  @@index([userId])
+  @@index([requestId])
+  @@index([assignedById])
+  @@index([returnedAt])
+  @@index([assignedAt])
+}
+
+enum LeaveType {
+  CASUAL
+  SICK
+  ANNUAL
+  UNPAID
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model LeaveBalance {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation("UserLeaveBalances", fields: [userId], references: [id], onDelete: Cascade)
+  year       Int
+  casualDays Int      @default(12)
+  sickDays   Int      @default(12)
+  annualDays Int      @default(15)
+  usedCasual Int      @default(0)
+  usedSick   Int      @default(0)
+  usedAnnual Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, year])
+  @@index([userId])
+  @@index([year])
+}
+
+model LeaveRequest {
+  id         String      @id @default(uuid())
+  userId     String
+  user       User        @relation("EmployeeLeaves", fields: [userId], references: [id], onDelete: Cascade)
+  type       LeaveType
+  startDate  DateTime
+  endDate    DateTime
+  daysCount  Int
+  reason     String
+  status     LeaveStatus @default(PENDING)
+  approverId String?
+  approver   User?       @relation("DecidedLeaves", fields: [approverId], references: [id], onDelete: SetNull)
+  decidedAt  DateTime?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([startDate, endDate])
+  @@index([createdAt])
+}
+
+model Holiday {
+  id        String   @id @default(uuid())
+  name      String
+  date      DateTime @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
 }

@@ -80,6 +80,19 @@ documentRouter.post(
 );
 
 /**
+ * POST /api/documents/:id/versions
+ * Admin only: Upload a new version of an existing document
+ */
+documentRouter.post(
+  "/:id/versions",
+  authenticate,
+  authorize(Role.ADMIN),
+  upload.single("file"),
+  validate({ params: documentIdParamSchema }),
+  documentController.uploadNewVersion
+);
+
+/**
  * DELETE /api/documents/:id
  * Admin only: deletes document record, chunks, and stored file from disk
  */

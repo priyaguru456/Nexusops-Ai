@@ -20,6 +20,12 @@ export const useAuditLogs = (filters: AuditLogQueryFilters = {}) => {
   });
 };
 
+export const useExportAuditLogs = () => {
+  return useMutation({
+    mutationFn: (filters: AuditLogQueryFilters = {}) => adminApi.exportAuditLogsCsv(filters),
+  });
+};
+
 export const useUsers = (filters: UserQueryFilters = {}) => {
   return useQuery({
     queryKey: USER_KEYS.list(filters),

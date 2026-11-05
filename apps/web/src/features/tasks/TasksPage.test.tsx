@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { TasksPage } from "./TasksPage";
 import * as AuthContextModule from "../auth/AuthContext";
@@ -108,6 +108,8 @@ const mockTasks: TaskItem[] = [
 
 describe("React Testing Library: TasksPage Enhancements", () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-03T10:00:00+05:30"));
     vi.clearAllMocks();
     localStorage.clear();
 
@@ -138,6 +140,10 @@ describe("React Testing Library: TasksPage Enhancements", () => {
       mutate: vi.fn(),
       isPending: false,
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   const renderComponent = () =>
@@ -188,6 +194,7 @@ describe("React Testing Library: TasksPage Enhancements", () => {
   });
 
   it("renders due-date badges only when status is not DONE", () => {
+    vi.setSystemTime(new Date("2026-11-03T10:00:00+05:30"));
     renderComponent();
 
     // task-1 is overdue
@@ -237,6 +244,7 @@ describe("React Testing Library: TasksPage Enhancements", () => {
   });
 
   it("filters tasks by Due Date quick chips (Overdue, Due today, This week)", async () => {
+    vi.setSystemTime(new Date("2026-11-03T10:00:00+05:30"));
     const user = userEvent.setup();
     renderComponent();
 
@@ -279,6 +287,7 @@ describe("React Testing Library: TasksPage Enhancements", () => {
   });
 
   it("switches smoothly between Kanban and List views with badges preserved", async () => {
+    vi.setSystemTime(new Date("2026-11-03T10:00:00+05:30"));
     const user = userEvent.setup();
     renderComponent();
 

@@ -332,7 +332,7 @@ export function ActivityTimeline({
           id: `audit-${log.id}`,
           type: "audit_entry",
           title: log.action.replace(/_/g, " "),
-          subtitle: `Recorded by ${actorName}`,
+          subtitle: log.summary || `Recorded by ${actorName}`,
           timestamp: log.createdAt,
           actor: { name: actorName, role: actorRole },
           icon: CheckCircle2,

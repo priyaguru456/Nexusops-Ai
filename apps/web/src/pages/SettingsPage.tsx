@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { User as UserIcon, Lock, Shield, Mail, Building, AlertCircle } from "lucide-react";
+import { User as UserIcon, Lock, Shield, Mail, Building, AlertCircle, Laptop } from "lucide-react";
 import { useAuth } from "../features/auth/AuthContext";
 import { profileApi } from "../features/auth/api";
 import { updateProfileSchema, changePasswordFormSchema } from "../features/auth/schemas";
@@ -10,10 +10,13 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Badge } from "../components/ui/badge";
 import { useToast } from "../components/ui/toast";
+import { MyAssignedAssetsTab } from "../features/assets/MyAssignedAssetsTab";
 
 export function SettingsPage(): React.JSX.Element {
   const { user, updateUser } = useAuth();
   const { success: toastSuccess, error: toastError } = useToast();
+
+  const [activeTab, setActiveTab] = useState<"profile" | "assets">("profile");
 
   // Profile Form State
   const [name, setName] = useState(user?.name || "");
@@ -125,9 +128,51 @@ export function SettingsPage(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-8">
-        {/* Profile Card */}
-        <Card>
+      {/* Tabs Navigation */}
+      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-px" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          id="tab-profile"
+          aria-controls="panel-profile"
+          aria-selected={activeTab === "profile"}
+          onClick={() => setActiveTab("profile")}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors -mb-px cursor-pointer ${
+            activeTab === "profile"
+              ? "border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400"
+              : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+          }`}
+        >
+          <UserIcon className="w-4 h-4" />
+          <span>Profile & Security</span>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          id="tab-assets"
+          aria-controls="panel-assets"
+          aria-selected={activeTab === "assets"}
+          onClick={() => setActiveTab("assets")}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors -mb-px cursor-pointer ${
+            activeTab === "assets"
+              ? "border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400"
+              : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+          }`}
+        >
+          <Laptop className="w-4 h-4" />
+          <span>My Assigned Assets</span>
+        </button>
+      </div>
+
+      {activeTab === "assets" ? (
+        <div id="panel-assets" role="tabpanel" aria-labelledby="tab-assets">
+          <MyAssignedAssetsTab />
+        </div>
+      ) : (
+        <div id="panel-profile" role="tabpanel" aria-labelledby="tab-profile" className="grid grid-cols-1 gap-8">
+          {/* Profile Card */}
+          <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
               <UserIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
@@ -304,7 +349,8 @@ export function SettingsPage(): React.JSX.Element {
             </form>
           </CardContent>
         </Card>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

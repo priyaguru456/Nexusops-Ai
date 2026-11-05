@@ -51,6 +51,7 @@ export class UserService {
       action: "ROLE_CHANGE",
       entityType: "User",
       entityId: targetUserId,
+      summary: `Changed role of user ${targetUser.email} from ${previousRole} to ${newRole}`,
       metadata: {
         previousRole,
         newRole,

@@ -49,6 +49,8 @@ describe("React Testing Library: Role-based Sidebar Navigation Menu", () => {
     expect(screen.getByRole("link", { name: /knowledge base/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /ai assistant/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /analytics/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /directory/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /announcements/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /settings/i })).toBeInTheDocument();
 
     // Restricted items must NOT be rendered
@@ -74,6 +76,8 @@ describe("React Testing Library: Role-based Sidebar Navigation Menu", () => {
     expect(screen.getByRole("link", { name: /ai assistant/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /approvals/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /analytics/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /directory/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /announcements/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /settings/i })).toBeInTheDocument();
 
     // Admin-only items must NOT be rendered
@@ -98,8 +102,10 @@ describe("React Testing Library: Role-based Sidebar Navigation Menu", () => {
     expect(screen.getByRole("link", { name: /ai assistant/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /approvals/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /analytics/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /directory/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /user management/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /audit logs/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /announcements/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /settings/i })).toBeInTheDocument();
   });
 });

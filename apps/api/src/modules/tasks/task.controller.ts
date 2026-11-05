@@ -67,6 +67,17 @@ export class TaskController {
       next(error);
     }
   }
+
+  async deleteTask(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) throw AppError.unauthorized();
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const result = await taskService.deleteTask(id, req.user);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const taskController = new TaskController();

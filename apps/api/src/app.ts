@@ -13,13 +13,18 @@ import { userRouter } from "./modules/users/user.routes";
 import { requestRouter } from "./modules/requests/request.routes";
 import { taskRouter } from "./modules/tasks/task.routes";
 import { commentRouter } from "./modules/comments/comment.routes";
-import { approvalRouter } from "./modules/approvals/approval.routes";
+import { approvalRouter, approvalFlowRouter } from "./modules/approvals/approval.routes";
 import { notificationRouter } from "./modules/notifications/notification.routes";
 import { auditRouter } from "./modules/audit/audit.routes";
 import { documentRouter } from "./modules/documents/document.routes";
 import { aiRouter } from "./modules/ai/ai.routes";
 import { analyticsRouter } from "./modules/analytics/analytics.routes";
 import { searchRouter } from "./modules/search/search.routes";
+import { announcementRouter } from "./modules/announcements/announcement.routes";
+import { directoryRouter } from "./modules/directory/directory.routes";
+import { assetRouter } from "./modules/assets/asset.routes";
+import { policyRouter } from "./modules/policies/policy.routes";
+import { leaveRouter } from "./modules/leaves/leave.routes";
 
 export const app = express();
 
@@ -79,12 +84,18 @@ app.use("/api/requests", requestRouter);
 app.use("/api/tasks", taskRouter);
 app.use("/api/comments", commentRouter);
 app.use("/api/approvals", approvalRouter);
+app.use("/api/approval-flows", approvalFlowRouter);
 app.use("/api/notifications", notificationRouter);
 app.use("/api/audit-logs", auditRouter);
 app.use("/api/documents", documentRouter);
 app.use("/api/ai", aiRouter);
 app.use("/api/analytics", analyticsRouter);
 app.use("/api/search", searchRouter);
+app.use("/api/announcements", announcementRouter);
+app.use("/api/directory", directoryRouter);
+app.use("/api/assets", assetRouter);
+app.use("/api/policies", policyRouter);
+app.use("/api/leaves", leaveRouter);
 
 app.use(notFound);
 app.use(errorHandler);

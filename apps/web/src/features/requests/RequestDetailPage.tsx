@@ -14,6 +14,8 @@ import {
   Clock,
   ArrowRightCircle,
   FileCheck,
+  Laptop,
+  Plus,
 } from "lucide-react";
 import {
   useRequest,
@@ -33,6 +35,11 @@ import { DetailSkeleton } from "../../components/ui/LoadingSkeleton";
 import { ActivityTimeline } from "./ActivityTimeline";
 import { ApprovalStepper } from "../approvals/ApprovalStepper";
 import { formatKolkataDate } from "../../lib/utils";
+import { assetsApi } from "../assets/api";
+import { AssetTypeIcon } from "../assets/AssetTypeIcon";
+import { AssetStatusBadge } from "../assets/AssetStatusBadge";
+import { AssignAssetFromRequestModal } from "../assets/AssignAssetFromRequestModal";
+import type { Asset } from "../assets/types";
 
 export function RequestDetailPage(): React.JSX.Element {
   const { id = "" } = useParams<{ id: string }>();
@@ -62,6 +69,22 @@ export function RequestDetailPage(): React.JSX.Element {
     description: "",
     action: () => {},
   });
+
+  // Hardware assets state for IT requests
+  const [linkedAssets, setLinkedAssets] = useState<Asset[]>([]);
+  const [loadingLinkedAssets, setLoadingLinkedAssets] = useState(false);
+  const [assignAssetModalOpen, setAssignAssetModalOpen] = useState(false);
+
+  React.useEffect(() => {
+    if (id && request?.category === "IT") {
+      setLoadingLinkedAssets(true);
+      assetsApi
+        .list({ requestId: id })
+        .then((res) => setLinkedAssets(res.data))
+        .catch(() => setLinkedAssets([]))
+        .finally(() => setLoadingLinkedAssets(false));
+    }
+  }, [id, request?.category]);
 
   if (isLoading) {
     return <DetailSkeleton />;
@@ -489,6 +512,62 @@ export function RequestDetailPage(): React.JSX.Element {
               )}
             </div>
           </div>
+
+          {/* Linked IT Hardware Assets Card */}
+          {request.category === "IT" && (
+            <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <Laptop className="w-3.5 h-3.5 text-indigo-500" />
+                  Hardware Assets
+                </h3>
+                {isAdmin && request.status === "COMPLETED" && (
+                  <Button
+                    size="sm"
+                    onClick={() => setAssignAssetModalOpen(true)}
+                    className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white gap-1"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Assign Asset</span>
+                  </Button>
+                )}
+              </div>
+
+              {loadingLinkedAssets ? (
+                <p className="text-xs text-slate-400">Loading linked assets...</p>
+              ) : linkedAssets.length === 0 ? (
+                <div className="text-xs text-slate-500 dark:text-slate-400 p-3 rounded-xl bg-slate-50 dark:bg-slate-850/60 border border-dashed border-slate-200 dark:border-slate-800 text-center">
+                  {request.status === "COMPLETED" && isAdmin
+                    ? "Request is completed. IT staff can assign an available hardware asset to the requester."
+                    : "No hardware assets currently linked to this request."}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {linkedAssets.map((asset) => (
+                    <div
+                      key={asset.id}
+                      className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850/40 text-xs flex items-center justify-between gap-2"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-7 h-7 rounded-lg bg-white dark:bg-slate-800 flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700">
+                          <AssetTypeIcon type={asset.type} size="sm" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                            {asset.name}
+                          </p>
+                          <p className="text-[11px] font-mono text-slate-500">
+                            {asset.serialNumber || "No serial"}
+                          </p>
+                        </div>
+                      </div>
+                      <AssetStatusBadge status={asset.status} size="sm" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -505,6 +584,20 @@ export function RequestDetailPage(): React.JSX.Element {
         }}
         onCancel={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
       />
+
+      {/* Assign Hardware Asset Modal */}
+      {request.category === "IT" && (
+        <AssignAssetFromRequestModal
+          isOpen={assignAssetModalOpen}
+          onClose={() => setAssignAssetModalOpen(false)}
+          requestId={request.id}
+          requesterId={request.requesterId}
+          requesterName={request.requester.name}
+          onSuccess={(newlyAssigned) => {
+            setLinkedAssets((prev) => [newlyAssigned, ...prev]);
+          }}
+        />
+      )}
     </div>
   );
 }

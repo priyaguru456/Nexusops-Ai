@@ -101,6 +101,8 @@ export interface ActivityHistoryItem {
   action: string;
   entityType: string;
   entityId: string | null;
+  summary?: string | null;
+  ipAddress?: string | null;
   createdAt: string;
   actorId: string | null;
   metadata?: Record<string, unknown> | null;

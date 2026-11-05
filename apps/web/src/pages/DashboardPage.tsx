@@ -36,6 +36,7 @@ import {
   CategoryPieChart,
   EmptyChartState,
 } from "../features/analytics/components/Charts";
+import { CompanyNewsWidget } from "../features/announcements/CompanyNewsWidget";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../components/ui/card";
 
@@ -451,10 +452,13 @@ export const DashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Notifications Hub & Quick Workflows Row */}
+      {/* Announcements, Notifications Hub & Quick Workflows Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* System Notifications Hub */}
-        <div className="lg:col-span-2">
+        {/* Left Column: Company News + System Notifications */}
+        <div className="lg:col-span-2 space-y-6">
+          <CompanyNewsWidget />
+
+          {/* System Notifications Hub */}
           <Card className="rounded-2xl border-slate-200 dark:border-slate-800 shadow-xs">
             <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center justify-between">

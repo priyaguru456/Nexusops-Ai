@@ -10,6 +10,9 @@ import {
   BarChart3,
   Users,
   Shield,
+  Contact,
+  Megaphone,
+  Laptop,
   LogOut,
   Menu,
   X,
@@ -79,6 +82,18 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["EMPLOYEE", "MANAGER", "ADMIN"],
   },
   {
+    label: "Directory",
+    href: "/directory",
+    icon: Contact,
+    roles: ["EMPLOYEE", "MANAGER", "ADMIN"],
+  },
+  {
+    label: "Announcements",
+    href: "/announcements",
+    icon: Megaphone,
+    roles: ["EMPLOYEE", "MANAGER", "ADMIN"],
+  },
+  {
     label: "User Management",
     href: "/admin/users",
     icon: Users,
@@ -88,6 +103,12 @@ const NAV_ITEMS: NavItem[] = [
     label: "Audit Logs",
     href: "/admin/audit",
     icon: Shield,
+    roles: ["ADMIN"],
+  },
+  {
+    label: "Assets",
+    href: "/assets",
+    icon: Laptop,
     roles: ["ADMIN"],
   },
   {
@@ -150,6 +171,8 @@ export const AppLayout: React.FC = () => {
     if (pathname.startsWith("/ai")) return { title: "AI Assistant", section: "AI" };
     if (pathname.startsWith("/approvals")) return { title: "Approvals", section: "Approvals" };
     if (pathname.startsWith("/analytics")) return { title: "Analytics", section: "Analytics" };
+    if (pathname.startsWith("/directory")) return { title: "Company Directory", section: "Organization" };
+    if (pathname.startsWith("/announcements")) return { title: "Announcements", section: "Communications" };
     if (pathname.startsWith("/admin/users")) return { title: "User Management", section: "Administration" };
     if (pathname.startsWith("/admin/audit")) return { title: "Audit Logs", section: "Administration" };
     if (pathname.startsWith("/notifications")) return { title: "Notifications", section: "Workspace" };

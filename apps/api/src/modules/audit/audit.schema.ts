@@ -5,6 +5,7 @@ export const getAuditLogsQuerySchema = z.object({
   entityType: z.string().trim().optional(),
   entityId: z.string().trim().optional(),
   actorId: z.string().trim().optional(),
+  actor: z.string().trim().optional(),
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -12,3 +13,15 @@ export const getAuditLogsQuerySchema = z.object({
 });
 
 export type GetAuditLogsQuery = z.infer<typeof getAuditLogsQuerySchema>;
+
+export const exportAuditLogsQuerySchema = z.object({
+  action: z.string().trim().optional(),
+  entityType: z.string().trim().optional(),
+  entityId: z.string().trim().optional(),
+  actorId: z.string().trim().optional(),
+  actor: z.string().trim().optional(),
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().optional(),
+});
+
+export type ExportAuditLogsQuery = z.infer<typeof exportAuditLogsQuerySchema>;

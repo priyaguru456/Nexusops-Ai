@@ -81,6 +81,7 @@ describe("React Testing Library: Global Command Palette", () => {
     expect(screen.getByText("Knowledge Base")).toBeInTheDocument();
     expect(screen.getByText("AI Assistant")).toBeInTheDocument();
     expect(screen.getByText("Analytics")).toBeInTheDocument();
+    expect(screen.getByText("Announcements")).toBeInTheDocument();
     expect(screen.getByText("Settings")).toBeInTheDocument();
 
     // Restricted pages must NOT be present

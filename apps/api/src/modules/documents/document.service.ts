@@ -142,6 +142,23 @@ export const documentService = {
       logger.error({ queueErr, documentId: doc.id }, "Failed to enqueue document processing job");
     }
 
+    // 5. Record audit entry for document upload
+    await auditService.log({
+      actorId: user.id,
+      action: "DOCUMENT_UPLOADED",
+      entityType: "Document",
+      entityId: doc.id,
+      summary: `Uploaded document "${doc.title}"`,
+      metadata: {
+        title: doc.title,
+        fileName: doc.fileName,
+        sizeBytes: doc.sizeBytes,
+        mimeType: doc.mimeType,
+        category: doc.category,
+        visibility: doc.visibility,
+      },
+    });
+
     return doc;
   },
 
@@ -293,6 +310,77 @@ export const documentService = {
     // Delete document and chunks from database
     await documentRepository.delete(id);
 
+    // Record audit entry for document deletion
+    await auditService.log({
+      actorId: user.id,
+      action: "DOCUMENT_DELETED",
+      entityType: "Document",
+      entityId: id,
+      summary: `Deleted document "${doc.title}"`,
+      metadata: {
+        title: doc.title,
+        fileName: doc.fileName,
+      },
+    });
+
     return { success: true };
+  },
+
+  async uploadNewVersion(
+    id: string,
+    file: Express.Multer.File,
+    metadata: { title?: string },
+    user: AuthenticatedUser
+  ): Promise<Document> {
+    const doc = await documentRepository.findById(id);
+    if (!doc) {
+      throw AppError.notFound("Document not found");
+    }
+
+    if (user.role !== Role.ADMIN) {
+      throw AppError.forbidden("Only administrators can upload a new version of a document");
+    }
+
+    validateMimeAndExtension(file.originalname, file.mimetype);
+    const stored = await storageService.save(file.buffer, file.originalname);
+
+    const oldVersion = doc.version;
+    const newVersion = oldVersion + 1;
+
+    // Delete existing chunks to ensure old chunks do not stay in index
+    await documentRepository.deleteChunks(id);
+
+    const updated = await documentRepository.update(id, {
+      version: newVersion,
+      fileName: file.originalname,
+      filePath: stored.relativePath,
+      mimeType: file.mimetype,
+      sizeBytes: stored.sizeBytes,
+      title: metadata.title || doc.title,
+      status: DocStatus.UPLOADED,
+      errorMessage: null,
+    });
+
+    try {
+      await documentQueue.add("process-document", { documentId: id });
+    } catch (queueErr) {
+      logger.error({ queueErr, documentId: id }, "Failed to enqueue document re-processing job");
+    }
+
+    await auditService.log({
+      actorId: user.id,
+      action: "DOCUMENT_NEW_VERSION_UPLOADED",
+      entityType: "Document",
+      entityId: id,
+      summary: `Uploaded version ${newVersion} for document "${updated.title}"`,
+      metadata: {
+        title: updated.title,
+        oldVersion,
+        newVersion,
+        fileName: file.originalname,
+      },
+    });
+
+    return updated;
   },
 };
