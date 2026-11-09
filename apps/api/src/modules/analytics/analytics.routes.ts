@@ -39,3 +39,34 @@ analyticsRouter.get(
  * Export scoped data as CSV with formula injection sanitization.
  */
 analyticsRouter.get("/export", authenticate, analyticsController.exportCSV);
+
+/**
+ * Admin-Only Weekly Analytics Email Digest Routes
+ */
+analyticsRouter.get(
+  "/digest/schedule",
+  authenticate,
+  authorize(Role.ADMIN),
+  analyticsController.getDigestSchedule
+);
+
+analyticsRouter.put(
+  "/digest/schedule",
+  authenticate,
+  authorize(Role.ADMIN),
+  analyticsController.saveDigestSchedule
+);
+
+analyticsRouter.post(
+  "/digest/send-test",
+  authenticate,
+  authorize(Role.ADMIN),
+  analyticsController.sendTestDigest
+);
+
+analyticsRouter.get(
+  "/digest/deliveries",
+  authenticate,
+  authorize(Role.ADMIN),
+  analyticsController.getDigestDeliveries
+);

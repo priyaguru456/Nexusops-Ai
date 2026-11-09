@@ -25,6 +25,9 @@ import { NotificationsPage } from "./features/notifications/NotificationsPage";
 import { AnnouncementsPage } from "./features/announcements/AnnouncementsPage";
 import { DirectoryPage } from "./features/directory/DirectoryPage";
 import { AssetsListPage } from "./features/assets/AssetsListPage";
+import { CalendarPage } from "./features/calendar/CalendarPage";
+import { SurveysAdminPage } from "./features/surveys/SurveysAdminPage";
+import { ExpensesPage } from "./features/expenses/ExpensesPage";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
 
 export default function App(): React.JSX.Element {
@@ -52,6 +55,7 @@ export default function App(): React.JSX.Element {
 
                 {/* Tasks routes */}
                 <Route path="/tasks" element={<TasksPage />} />
+                <Route path="/calendar" element={<CalendarPage />} />
                 <Route path="/documents" element={<DocumentsPage />} />
                 <Route path="/ai" element={<AiAssistantPage />} />
 
@@ -72,6 +76,8 @@ export default function App(): React.JSX.Element {
 
                 {/* Assets route */}
                 <Route path="/assets" element={<AssetsListPage />} />
+                <Route path="/expenses" element={<ExpensesPage />} />
+                <Route path="/expenses/:id" element={<ExpensesPage />} />
                 <Route path="/profile" element={<Navigate to="/settings" replace />} />
 
                 {/* Manager and Admin routes */}
@@ -106,6 +112,14 @@ export default function App(): React.JSX.Element {
                   element={
                     <ProtectedRoute roles={["ADMIN"]}>
                       <AuditLogPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/surveys"
+                  element={
+                    <ProtectedRoute roles={["ADMIN"]}>
+                      <SurveysAdminPage />
                     </ProtectedRoute>
                   }
                 />

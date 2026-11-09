@@ -140,3 +140,47 @@ export interface AIUsageAnalyticsData {
   metrics: AIUsageMetrics;
   mostUsedDocuments: MostUsedDocument[];
 }
+
+export interface DigestScheduleData {
+  id: string;
+  recipients: string[];
+  frequency: "WEEKLY";
+  dayOfWeek: number; // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  hour: number;      // 0 - 23
+  timezone: string;
+  isActive: boolean;
+  lastRunAt: string | null;
+  createdBy: string;
+  creator?: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DigestDeliveryData {
+  id: string;
+  scheduleId: string | null;
+  sentAt: string;
+  status: "SUCCESS" | "FAILED" | "PENDING";
+  error: string | null;
+  recipientCount: number;
+  createdAt: string;
+}
+
+export interface DigestDeliveriesResponse {
+  deliveries: DigestDeliveryData[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
+export interface SaveDigestSchedulePayload {
+  recipients: string[];
+  dayOfWeek: number;
+  hour: number;
+  timezone?: string;
+  isActive?: boolean;
+}

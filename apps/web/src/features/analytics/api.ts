@@ -1,10 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, baseURL, getAccessToken, refreshAccessToken } from "../../api/client";
 import type {
   AnalyticsOverviewData,
   RequestsAnalyticsData,
   TasksAnalyticsData,
   AIUsageAnalyticsData,
+  DigestScheduleData,
+  DigestDeliveriesResponse,
+  SaveDigestSchedulePayload,
 } from "./types";
 
 export const analyticsApi = {
@@ -101,6 +104,36 @@ export const analyticsApi = {
       window.URL.revokeObjectURL(objectUrl);
     }, 60000);
   },
+
+  async getDigestSchedule(): Promise<DigestScheduleData | null> {
+    const res = await api.get<{ status: string; data: DigestScheduleData | null }>(
+      "/analytics/digest/schedule"
+    );
+    return res.data.data;
+  },
+
+  async saveDigestSchedule(payload: SaveDigestSchedulePayload): Promise<DigestScheduleData> {
+    const res = await api.put<{ status: string; data: DigestScheduleData }>(
+      "/analytics/digest/schedule",
+      payload
+    );
+    return res.data.data;
+  },
+
+  async sendTestDigest(recipients?: string[]): Promise<{ success: boolean; deliveryId: string }> {
+    const res = await api.post<{ status: string; message: string; data: { success: boolean; deliveryId: string } }>(
+      "/analytics/digest/send-test",
+      { recipients }
+    );
+    return res.data.data;
+  },
+
+  async getDigestDeliveries(page = 1, limit = 10): Promise<DigestDeliveriesResponse> {
+    const res = await api.get<{ status: string; data: DigestDeliveriesResponse }>(
+      `/analytics/digest/deliveries?page=${page}&limit=${limit}`
+    );
+    return res.data.data;
+  },
 };
 
 export function useAnalyticsOverview(from?: string, to?: string) {
@@ -133,5 +166,43 @@ export function useAIUsageAnalytics(from?: string, to?: string, enabled = true) 
     queryFn: () => analyticsApi.getAIUsage(from, to),
     enabled,
     staleTime: 60 * 1000,
+  });
+}
+
+export function useDigestSchedule(enabled = true) {
+  return useQuery({
+    queryKey: ["analytics", "digest-schedule"],
+    queryFn: () => analyticsApi.getDigestSchedule(),
+    enabled,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useDigestDeliveries(page = 1, limit = 10, enabled = true) {
+  return useQuery({
+    queryKey: ["analytics", "digest-deliveries", page, limit],
+    queryFn: () => analyticsApi.getDigestDeliveries(page, limit),
+    enabled,
+    staleTime: 15 * 1000,
+  });
+}
+
+export function useSaveDigestSchedule() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: SaveDigestSchedulePayload) => analyticsApi.saveDigestSchedule(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["analytics", "digest-schedule"] });
+    },
+  });
+}
+
+export function useSendTestDigest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (recipients?: string[]) => analyticsApi.sendTestDigest(recipients),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["analytics", "digest-deliveries"] });
+    },
   });
 }

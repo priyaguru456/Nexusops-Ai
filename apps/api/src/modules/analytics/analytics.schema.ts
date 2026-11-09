@@ -117,3 +117,40 @@ export const exportQuerySchema = dateRangeQuerySchema.and(
 );
 
 export type ExportQueryParsed = z.infer<typeof exportQuerySchema>;
+
+export const saveDigestScheduleSchema = z.object({
+  recipients: z
+    .array(z.string().email("Invalid email address format").toLowerCase().trim())
+    .min(1, "At least one recipient email address is required"),
+  dayOfWeek: z
+    .number()
+    .int()
+    .min(0, "dayOfWeek must be between 0 (Sunday) and 6 (Saturday)")
+    .max(6, "dayOfWeek must be between 0 (Sunday) and 6 (Saturday)"),
+  hour: z
+    .number()
+    .int()
+    .min(0, "hour must be between 0 and 23")
+    .max(23, "hour must be between 0 and 23"),
+  timezone: z.string().default("Asia/Kolkata"),
+  isActive: z.boolean().default(true),
+});
+
+export type SaveDigestScheduleInput = z.infer<typeof saveDigestScheduleSchema>;
+
+export const sendTestDigestSchema = z.object({
+  recipients: z
+    .array(z.string().email("Invalid email address format").toLowerCase().trim())
+    .min(1, "At least one recipient email address is required")
+    .optional(),
+  timezone: z.string().optional(),
+});
+
+export type SendTestDigestInput = z.infer<typeof sendTestDigestSchema>;
+
+export const digestDeliveriesQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+export type DigestDeliveriesQueryParsed = z.infer<typeof digestDeliveriesQuerySchema>;

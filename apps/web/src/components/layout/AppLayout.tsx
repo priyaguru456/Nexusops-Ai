@@ -22,11 +22,15 @@ import {
   Home,
   ChevronRight,
   Plus,
+  CalendarDays,
+  Star,
+  Receipt,
 } from "lucide-react";
 import { useAuth } from "../../features/auth/AuthContext";
 import { ThemeToggle } from "./ThemeToggle";
 import { NotificationBell } from "../../features/notifications/NotificationBell";
 import { GlobalSearchModal } from "./GlobalSearchModal";
+import { CsatSurveyModal } from "../../features/surveys/CsatSurveyModal";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import type { Role } from "../../types/auth";
@@ -55,6 +59,18 @@ const NAV_ITEMS: NavItem[] = [
     label: "Tasks",
     href: "/tasks",
     icon: CheckSquare,
+    roles: ["EMPLOYEE", "MANAGER", "ADMIN"],
+  },
+  {
+    label: "Calendar",
+    href: "/calendar",
+    icon: CalendarDays,
+    roles: ["EMPLOYEE", "MANAGER", "ADMIN"],
+  },
+  {
+    label: "Expenses",
+    href: "/expenses",
+    icon: Receipt,
     roles: ["EMPLOYEE", "MANAGER", "ADMIN"],
   },
   {
@@ -109,6 +125,12 @@ const NAV_ITEMS: NavItem[] = [
     label: "Assets",
     href: "/assets",
     icon: Laptop,
+    roles: ["ADMIN"],
+  },
+  {
+    label: "Surveys & CSAT",
+    href: "/admin/surveys",
+    icon: Star,
     roles: ["ADMIN"],
   },
   {
@@ -472,6 +494,9 @@ export const AppLayout: React.FC = () => {
         isOpen={searchModalOpen}
         onClose={() => setSearchModalOpen(false)}
       />
+
+      {/* Non-blocking CSAT Survey Modal for fulfilled requests */}
+      <CsatSurveyModal />
     </div>
   );
 };

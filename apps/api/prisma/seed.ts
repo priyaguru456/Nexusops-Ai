@@ -779,6 +779,187 @@ async function main() {
     console.warn("Leave seed skipped:", err);
   }
 
+  // Seed Sample Weekly Digest Schedule for Admin
+  try {
+    if (admin?.id) {
+      const schedule = await prisma.digestSchedule.upsert({
+        where: { id: "sched-weekly-analytics-admin" },
+        update: {
+          recipients: ["admin@nexusops.com", "operations-lead@nexusops.com"],
+          dayOfWeek: 1, // Monday
+          hour: 9,      // 09:00 AM IST
+          timezone: "Asia/Kolkata",
+          isActive: true,
+          createdBy: admin.id,
+        },
+        create: {
+          id: "sched-weekly-analytics-admin",
+          recipients: ["admin@nexusops.com", "operations-lead@nexusops.com"],
+          frequency: "WEEKLY",
+          dayOfWeek: 1, // Monday
+          hour: 9,      // 09:00 AM IST
+          timezone: "Asia/Kolkata",
+          isActive: true,
+          createdBy: admin.id,
+        },
+      });
+
+      await prisma.digestDelivery.upsert({
+        where: { id: "delivery-sample-past-1" },
+        update: {},
+        create: {
+          id: "delivery-sample-past-1",
+          scheduleId: schedule.id,
+          sentAt: new Date(Date.now() - 7 * 24 * 3600 * 1000),
+          status: "SUCCESS",
+          recipientCount: 2,
+        },
+      });
+      console.log("✓ Sample DigestSchedule and DigestDelivery seeded successfully");
+    }
+  } catch (err) {
+    console.warn("Digest seed skipped:", err);
+  }
+
+  // Seed Default CSAT Satisfaction Survey
+  try {
+    const existingDefaultSurvey = await prisma.survey.findFirst({
+      where: { title: "Request Fulfillment CSAT" },
+    });
+
+    if (!existingDefaultSurvey) {
+      await prisma.survey.create({
+        data: {
+          id: "default-csat-survey",
+          title: "Request Fulfillment CSAT",
+          isActive: true,
+          targetRole: null,
+          questions: [
+            {
+              id: "csat_rating",
+              question: "How satisfied are you with this fulfillment?",
+              type: "rating",
+              min: 1,
+              max: 5,
+              required: true,
+            },
+            {
+              id: "csat_comment",
+              question: "Any comments or suggestions?",
+              type: "text",
+              required: false,
+            },
+          ],
+        },
+      });
+      console.log("✓ Default CSAT Satisfaction Survey seeded successfully");
+    }
+  } catch (err) {
+    console.warn("Survey seed skipped:", err);
+  }
+
+  // Seed Sample Expense Claims & Items
+  try {
+    const alexUser = await prisma.user.findUnique({ where: { email: "employee.it1@nexusops.com" } });
+    const brianUser = await prisma.user.findUnique({ where: { email: "employee.it2@nexusops.com" } });
+
+    if (alexUser) {
+      // 1. Draft Claim
+      const existingDraft = await prisma.expenseClaim.findFirst({
+        where: { employeeId: alexUser.id, title: "Client Onsite Travel - Bengaluru" },
+      });
+      if (!existingDraft) {
+        await prisma.expenseClaim.create({
+          data: {
+            title: "Client Onsite Travel - Bengaluru",
+            totalAmount: 435000, // ₹4,350.00
+            status: "DRAFT",
+            employeeId: alexUser.id,
+            items: {
+              create: [
+                {
+                  category: "TRAVEL",
+                  amount: 350000, // ₹3,500.00
+                  receiptUrl: "/api/expenses/receipts/sample-flight-ticket.pdf",
+                  description: "Flight to Bengaluru client office",
+                  date: new Date(),
+                },
+                {
+                  category: "MEALS",
+                  amount: 85000, // ₹850.00
+                  receiptUrl: null,
+                  description: "Team working dinner",
+                  date: new Date(),
+                },
+              ],
+            },
+          },
+        });
+      }
+
+      // 2. Paid Claim
+      const existingPaid = await prisma.expenseClaim.findFirst({
+        where: { paymentReference: "PAY-2026-NEXUS-001" },
+      });
+      if (!existingPaid) {
+        await prisma.expenseClaim.create({
+          data: {
+            title: "Conference Registration & Travel",
+            totalAmount: 1500000, // ₹15,000.00
+            status: "PAID",
+            employeeId: alexUser.id,
+            paymentReference: "PAY-2026-NEXUS-001",
+            submittedAt: new Date(Date.now() - 72 * 3600 * 1000),
+            paidAt: new Date(Date.now() - 12 * 3600 * 1000),
+            items: {
+              create: [
+                {
+                  category: "OTHER",
+                  amount: 1500000,
+                  receiptUrl: "/api/expenses/receipts/sample-conf-pass.pdf",
+                  description: "DevOps Days India 2026 Registration Ticket",
+                  date: new Date(Date.now() - 80 * 3600 * 1000),
+                },
+              ],
+            },
+          },
+        });
+      }
+    }
+
+    if (brianUser) {
+      // 3. Approved Claim waiting for Finance payment
+      const existingApproved = await prisma.expenseClaim.findFirst({
+        where: { employeeId: brianUser.id, title: "Ergonomic Office Equipment" },
+      });
+      if (!existingApproved) {
+        await prisma.expenseClaim.create({
+          data: {
+            title: "Ergonomic Office Equipment",
+            totalAmount: 650000, // ₹6,500.00
+            status: "APPROVED",
+            employeeId: brianUser.id,
+            submittedAt: new Date(Date.now() - 48 * 3600 * 1000),
+            items: {
+              create: [
+                {
+                  category: "OFFICE",
+                  amount: 650000,
+                  receiptUrl: "/api/expenses/receipts/sample-chair-invoice.pdf",
+                  description: "Ergonomic Mesh Chair for Work From Home",
+                  date: new Date(Date.now() - 50 * 3600 * 1000),
+                },
+              ],
+            },
+          },
+        });
+      }
+    }
+    console.log("✓ Sample Expense Claims and Items seeded successfully");
+  } catch (err) {
+    console.warn("Expense seed skipped:", err);
+  }
+
   console.log("Database seed completed successfully.");
 }
 

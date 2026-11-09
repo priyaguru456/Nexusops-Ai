@@ -132,6 +132,9 @@ model User {
   leaveBalances        LeaveBalance[]         @relation("UserLeaveBalances")
   leaveRequests        LeaveRequest[]         @relation("EmployeeLeaves")
   decidedLeaves        LeaveRequest[]         @relation("DecidedLeaves")
+  expenseClaims        ExpenseClaim[]         @relation("EmployeeExpenseClaims")
+  digestSchedules      DigestSchedule[]       @relation("DigestScheduleCreator")
+  surveyResponses      SurveyResponse[]
 
   @@index([role])
   @@index([createdAt])
@@ -577,3 +580,138 @@ model Holiday {
 
   @@index([date])
 }
+
+enum ExpenseStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  PAID
+}
+
+enum ExpenseCategory {
+  TRAVEL
+  MEALS
+  SOFTWARE
+  OFFICE
+  OTHER
+}
+
+model ExpenseClaim {
+  id               String        @id @default(uuid())
+  title            String
+  totalAmount      Int           @default(0)
+  status           ExpenseStatus @default(DRAFT)
+  employeeId       String
+  employee         User          @relation("EmployeeExpenseClaims", fields: [employeeId], references: [id], onDelete: Cascade)
+  submittedAt      DateTime?
+  paidAt           DateTime?
+  paymentReference String?       @unique
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  items            ExpenseItem[]
+
+  @@index([employeeId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([paymentReference])
+}
+
+model ExpenseItem {
+  id          String          @id @default(uuid())
+  claimId     String
+  claim       ExpenseClaim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  category    ExpenseCategory
+  amount      Int
+  receiptUrl  String?
+  description String?
+  date        DateTime
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([claimId])
+  @@index([category])
+  @@index([date])
+}
+
+enum DigestFrequency {
+  WEEKLY
+}
+
+enum DigestDeliveryStatus {
+  SUCCESS
+  FAILED
+  PENDING
+}
+
+model DigestSchedule {
+  id         String           @id @default(uuid())
+  recipients String[]
+  frequency  DigestFrequency  @default(WEEKLY)
+  dayOfWeek  Int              // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  hour       Int              // 0 - 23
+  timezone   String           @default("Asia/Kolkata")
+  isActive   Boolean          @default(true)
+  lastRunAt  DateTime?
+  createdBy  String
+  creator    User             @relation("DigestScheduleCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  deliveries DigestDelivery[]
+
+  @@index([isActive])
+  @@index([createdBy])
+}
+
+model DigestDelivery {
+  id             String               @id @default(uuid())
+  scheduleId     String?
+  schedule       DigestSchedule?      @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  sentAt         DateTime             @default(now())
+  status         DigestDeliveryStatus @default(PENDING)
+  error          String?
+  recipientCount Int                  @default(0)
+  createdAt      DateTime             @default(now())
+
+  @@index([scheduleId])
+  @@index([status])
+  @@index([sentAt])
+}
+
+model Survey {
+  id         String          @id @default(uuid())
+  title      String
+  isActive   Boolean         @default(true)
+  targetRole Role?
+  questions  Json
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  responses  SurveyResponse[]
+
+  @@index([isActive])
+  @@index([targetRole])
+  @@index([createdAt])
+}
+
+model SurveyResponse {
+  id         String   @id @default(uuid())
+  surveyId   String
+  survey     Survey   @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entityType String   @default("REQUEST")
+  entityId   String
+  answers    Json
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, entityType, entityId])
+  @@index([surveyId])
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+

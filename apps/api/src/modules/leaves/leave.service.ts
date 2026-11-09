@@ -24,6 +24,7 @@ import type {
   ApplyLeaveInput,
   ListLeavesQuery,
   AddHolidayInput,
+  UpdateHolidayInput,
 } from "./leave.schema";
 
 export class LeaveService {
@@ -714,6 +715,86 @@ export class LeaveService {
     });
 
     return holiday;
+  }
+
+  /**
+   * Updates an existing company holiday (Admin only).
+   */
+  async updateHoliday(id: string, input: UpdateHolidayInput, user: AuthenticatedUser) {
+    if (user.role !== Role.ADMIN) {
+      throw AppError.forbidden("Only Administrators can modify company holidays");
+    }
+
+    const existing = await leaveRepository.findHolidayById(id);
+    if (!existing) {
+      throw AppError.notFound("Holiday not found");
+    }
+
+    let normalizedDate = existing.date;
+    if (input.date) {
+      normalizedDate = normalizeDateToUTC(input.date);
+      if (normalizedDate.getTime() !== existing.date.getTime()) {
+        const conflict = await leaveRepository.findHolidayByDate(normalizedDate);
+        if (conflict && conflict.id !== id) {
+          throw AppError.conflict(
+            `A holiday is already registered on ${formatDateKeyUTC(normalizedDate)}: ${conflict.name}`
+          );
+        }
+      }
+    }
+
+    const updated = await leaveRepository.updateHoliday(id, {
+      name: input.name ? input.name.trim() : undefined,
+      date: input.date ? normalizedDate : undefined,
+    });
+
+    await auditService.log({
+      actorId: user.id,
+      action: "HOLIDAY_UPDATED",
+      entityType: "Holiday",
+      entityId: updated.id,
+      summary: `Updated company holiday: ${updated.name} on ${formatDateKeyUTC(updated.date)}`,
+      metadata: {
+        holidayId: updated.id,
+        previousName: existing.name,
+        newName: updated.name,
+        previousDate: formatDateKeyUTC(existing.date),
+        newDate: formatDateKeyUTC(updated.date),
+      },
+    });
+
+    return updated;
+  }
+
+  /**
+   * Deletes a company holiday (Admin only).
+   */
+  async deleteHoliday(id: string, user: AuthenticatedUser) {
+    if (user.role !== Role.ADMIN) {
+      throw AppError.forbidden("Only Administrators can delete company holidays");
+    }
+
+    const existing = await leaveRepository.findHolidayById(id);
+    if (!existing) {
+      throw AppError.notFound("Holiday not found");
+    }
+
+    const deleted = await leaveRepository.deleteHoliday(id);
+
+    await auditService.log({
+      actorId: user.id,
+      action: "HOLIDAY_DELETED",
+      entityType: "Holiday",
+      entityId: deleted.id,
+      summary: `Deleted company holiday: ${deleted.name} on ${formatDateKeyUTC(deleted.date)}`,
+      metadata: {
+        holidayId: deleted.id,
+        name: deleted.name,
+        date: formatDateKeyUTC(deleted.date),
+      },
+    });
+
+    return deleted;
   }
 
   /**

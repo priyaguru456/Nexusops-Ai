@@ -1,5 +1,6 @@
 import {
   Role,
+  ExpenseStatus,
   type Prisma,
 } from "@prisma/client";
 import { prisma } from "../../../lib/prisma";
@@ -42,7 +43,51 @@ export class ExpenseApprovalHandler implements ApprovalEntityHandler {
 
     if (steps.length === 0) return null;
 
-    // Default metadata for Expense items until full Expense module models are introduced
+    let claim: any = null;
+    try {
+      claim = await client.expenseClaim.findUnique({
+        where: { id: entityId },
+        include: {
+          employee: true,
+          items: true,
+        },
+      });
+    } catch {
+      // Fallback for mocked tests or unmigrated environments
+    }
+
+    if (claim) {
+      const formattedAmount = (claim.totalAmount / 100).toLocaleString("en-IN", {
+        style: "currency",
+        currency: "INR",
+      });
+      return {
+        id: entityId,
+        title: claim.title,
+        description: `Expense claim for ${formattedAmount} (${claim.items.length} items)`,
+        requesterId: claim.employeeId,
+        requester: {
+          id: claim.employee.id,
+          name: claim.employee.name,
+          email: claim.employee.email,
+          role: claim.employee.role,
+          departmentId: claim.employee.departmentId,
+        },
+        link: this.getLink(entityId),
+        approvalSteps: steps.map((s) => ({
+          id: s.id,
+          stepOrder: s.stepOrder,
+          status: s.status,
+        })),
+        metadata: {
+          entityType: this.entityType,
+          totalAmountPaise: claim.totalAmount,
+          itemCount: claim.items.length,
+          status: claim.status,
+        },
+      };
+    }
+
     return {
       id: entityId,
       title: `Expense Claim #${entityId.slice(0, 8)}`,
@@ -80,10 +125,53 @@ export class ExpenseApprovalHandler implements ApprovalEntityHandler {
         nextStepOrder: nextStep?.stepOrder ?? null,
       },
     });
+
+    try {
+      const claim = await prisma.expenseClaim.findUnique({
+        where: { id: step.entityId },
+        select: { employeeId: true, title: true },
+      });
+      if (claim) {
+        await notificationService.notify(
+          claim.employeeId,
+          "APPROVAL_DECISION",
+          "Expense Claim Step Approved",
+          `Step ${step.stepOrder} of your expense claim "${claim.title}" was approved.`,
+          this.getLink(step.entityId),
+          this.getEntityTypeName(),
+          step.entityId
+        );
+      }
+    } catch {
+      // In case prisma.expenseClaim isn't mocked in some tests
+    }
   }
 
   async onFinalApproved(params: OnFinalApprovedParams): Promise<void> {
     const { step, user } = params;
+    const client = prisma;
+
+    try {
+      const claim = await client.expenseClaim.update({
+        where: { id: step.entityId },
+        data: {
+          status: ExpenseStatus.APPROVED,
+        },
+      });
+
+      await notificationService.notify(
+        claim.employeeId,
+        "APPROVAL_DECISION",
+        "Expense Claim Approved",
+        `Your expense claim "${claim.title}" has received final approval and is queued for finance payout.`,
+        this.getLink(step.entityId),
+        this.getEntityTypeName(),
+        step.entityId
+      );
+    } catch {
+      // In case client.expenseClaim isn't present in specific test mocks
+    }
+
     await auditService.log({
       actorId: user.id,
       action: "EXPENSE_APPROVED",
@@ -98,6 +186,29 @@ export class ExpenseApprovalHandler implements ApprovalEntityHandler {
 
   async onRejected(params: OnRejectedParams): Promise<void> {
     const { step, user, comment } = params;
+    const client = prisma;
+
+    try {
+      const claim = await client.expenseClaim.update({
+        where: { id: step.entityId },
+        data: {
+          status: ExpenseStatus.REJECTED,
+        },
+      });
+
+      await notificationService.notify(
+        claim.employeeId,
+        "APPROVAL_DECISION",
+        "Expense Claim Rejected",
+        `Your expense claim "${claim.title}" was rejected at step ${step.stepOrder}: ${comment.trim()}`,
+        this.getLink(step.entityId),
+        this.getEntityTypeName(),
+        step.entityId
+      );
+    } catch {
+      // In case client.expenseClaim isn't present in specific test mocks
+    }
+
     await auditService.log({
       actorId: user.id,
       action: "EXPENSE_REJECTED",

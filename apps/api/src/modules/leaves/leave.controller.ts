@@ -99,6 +99,28 @@ export class LeaveController {
       next(error);
     }
   }
+
+  async updateHoliday(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) throw AppError.unauthorized();
+      const holidayId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const holiday = await leaveService.updateHoliday(holidayId, req.body, req.user);
+      res.status(200).json({ holiday });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async deleteHoliday(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) throw AppError.unauthorized();
+      const holidayId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const holiday = await leaveService.deleteHoliday(holidayId, req.user);
+      res.status(200).json({ message: "Holiday deleted successfully", holiday });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const leaveController = new LeaveController();

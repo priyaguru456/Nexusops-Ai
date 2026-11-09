@@ -3,13 +3,17 @@ import { DocStatus } from "@prisma/client";
 import {
   DOCUMENT_QUEUE_NAME,
   ESCALATION_QUEUE_NAME,
+  DIGEST_QUEUE_NAME,
   DocumentJobData,
   EscalationJobData,
+  DigestJobData,
   createRedisConnection,
   getEscalationQueue,
+  getDigestQueue,
 } from "./lib/queue";
 import { processDocument } from "./jobs/document.processor";
 import { approvalEscalationService } from "./modules/approvals/approval-escalation.service";
+import { digestService } from "./modules/analytics/digest.service";
 import { env } from "./config/env";
 import { prisma } from "./lib/prisma";
 import { logger } from "./lib/logger";
@@ -129,7 +133,42 @@ escalationWorker.on("error", (err) => {
   logger.error({ err }, "BullMQ Escalation Worker encountered an internal error");
 });
 
-// 3. Register repeatable escalation schedule with fixed job ID
+// 3. Analytics Weekly Digest Worker
+export const digestWorker = new Worker<DigestJobData>(
+  DIGEST_QUEUE_NAME,
+  async (job: Job<DigestJobData>) => {
+    logger.info({ jobId: job.id, data: job.data }, "Worker processing analytics digest job");
+    if (job.data.isTest && job.data.testRecipients) {
+      return digestService.sendDigest({
+        scheduleId: job.data.scheduleId,
+        recipients: job.data.testRecipients,
+        isTest: true,
+      });
+    }
+
+    const count = await digestService.checkAndTriggerDueSchedules();
+    logger.info({ jobId: job.id, triggeredCount: count }, "Completed due weekly digest check");
+    return { triggeredCount: count };
+  },
+  {
+    connection: redisConnection,
+    concurrency: 1,
+  }
+);
+
+digestWorker.on("completed", (job) => {
+  logger.info({ jobId: job?.id }, "Digest job completed successfully");
+});
+
+digestWorker.on("failed", (job, err) => {
+  logger.error({ jobId: job?.id, error: err.message }, "Digest job failed");
+});
+
+digestWorker.on("error", (err) => {
+  logger.error({ err }, "BullMQ Digest Worker encountered an internal error");
+});
+
+// 4. Register repeatable escalation schedule with fixed job ID
 async function registerEscalationSchedule(): Promise<void> {
   try {
     const queue = getEscalationQueue();
@@ -155,7 +194,31 @@ async function registerEscalationSchedule(): Promise<void> {
   }
 }
 
+// 5. Register repeatable analytics digest schedule with fixed job ID
+async function registerDigestSchedule(): Promise<void> {
+  try {
+    const queue = getDigestQueue();
+    await queue.add(
+      "check-due-digests",
+      { triggeredAt: new Date().toISOString() },
+      {
+        jobId: "analytics-digest-schedule",
+        repeat: {
+          every: (env.DIGEST_CHECK_INTERVAL_MINUTES || 15) * 60 * 1000,
+        },
+      }
+    );
+    logger.info(
+      { intervalMinutes: env.DIGEST_CHECK_INTERVAL_MINUTES || 15 },
+      "Registered repeatable analytics weekly digest check job with fixed ID"
+    );
+  } catch (err: any) {
+    logger.warn({ err: err?.message }, "Could not register repeatable digest schedule (Redis might be starting)");
+  }
+}
+
 registerEscalationSchedule();
+registerDigestSchedule();
 
 // Graceful shutdown handling
 const gracefulShutdown = async (signal: string) => {
@@ -163,6 +226,7 @@ const gracefulShutdown = async (signal: string) => {
   try {
     await documentWorker.close();
     await escalationWorker.close();
+    await digestWorker.close();
     await redisConnection.quit();
     await prisma.$disconnect();
     logger.info("Worker process exited cleanly.");
@@ -177,5 +241,5 @@ process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 
 logger.info(
-  `Workers listening on queues: [${DOCUMENT_QUEUE_NAME}, ${ESCALATION_QUEUE_NAME}]`
+  `Workers listening on queues: [${DOCUMENT_QUEUE_NAME}, ${ESCALATION_QUEUE_NAME}, ${DIGEST_QUEUE_NAME}]`
 );

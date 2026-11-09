@@ -11,6 +11,7 @@ import {
   Zap,
   DollarSign,
   ShieldAlert,
+  Mail,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import {
@@ -34,12 +35,15 @@ import {
 import { AnalyticsSkeletons } from "./components/AnalyticsSkeletons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../components/ui/card";
 import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
 import { BackButton } from "../../components/ui/BackButton";
+import { DigestScheduleModal } from "./components/DigestScheduleModal";
 
 export const AnalyticsPage: React.FC = () => {
   const { user, role } = useAuth();
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<"overview" | "requests" | "tasks" | "ai">("overview");
+  const [isDigestModalOpen, setIsDigestModalOpen] = useState(false);
 
   const from = searchParams.get("from") || undefined;
   const to = searchParams.get("to") || undefined;
@@ -82,6 +86,18 @@ export const AnalyticsPage: React.FC = () => {
 
         {/* Date Filter & Export Controls */}
         <div className="flex items-center flex-wrap gap-2.5 no-print">
+          {role === "ADMIN" && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsDigestModalOpen(true)}
+              className="h-8 gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 border-slate-300 dark:border-slate-700"
+            >
+              <Mail className="w-3.5 h-3.5 text-indigo-500" />
+              Schedule Weekly Digest
+            </Button>
+          )}
           <DateRangeFilter />
           <CSVExportButton from={from} to={to} />
           <PDFExportButton />
@@ -733,6 +749,14 @@ export const AnalyticsPage: React.FC = () => {
             </div>
           )}
         </>
+      )}
+
+      {/* Schedule Weekly Digest Modal for Admins */}
+      {role === "ADMIN" && (
+        <DigestScheduleModal
+          isOpen={isDigestModalOpen}
+          onClose={() => setIsDigestModalOpen(false)}
+        />
       )}
     </div>
   );

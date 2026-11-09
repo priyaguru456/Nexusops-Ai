@@ -76,6 +76,47 @@ export class LeaveRepository {
   }
 
   /**
+   * Finds a holiday by its unique ID.
+   */
+  async findHolidayById(
+    id: string,
+    tx?: Prisma.TransactionClient
+  ): Promise<Holiday | null> {
+    const client = tx || prisma;
+    return client.holiday.findUnique({
+      where: { id },
+    });
+  }
+
+  /**
+   * Updates an existing company holiday.
+   */
+  async updateHoliday(
+    id: string,
+    data: { name?: string; date?: Date },
+    tx?: Prisma.TransactionClient
+  ): Promise<Holiday> {
+    const client = tx || prisma;
+    return client.holiday.update({
+      where: { id },
+      data,
+    });
+  }
+
+  /**
+   * Deletes a company holiday.
+   */
+  async deleteHoliday(
+    id: string,
+    tx?: Prisma.TransactionClient
+  ): Promise<Holiday> {
+    const client = tx || prisma;
+    return client.holiday.delete({
+      where: { id },
+    });
+  }
+
+  /**
    * Finds leave balance for a given user and calendar year.
    */
   async findBalance(

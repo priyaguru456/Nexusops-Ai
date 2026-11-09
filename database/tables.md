@@ -510,4 +510,53 @@ Stores official organizational holidays excluded from working day counts.
 - Unique constraint on `date`
 - Index on `date`
 
+---
+
+## 23. ExpenseClaim
+
+Stores employee expense and reimbursement claims, lifecycle states, computed minor unit totals, and payment references.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | TEXT / UUID | PRIMARY KEY | Unique expense claim ID |
+| `title` | TEXT | NOT NULL | Title/purpose of the expense claim |
+| `totalAmount` | INTEGER | NOT NULL, DEFAULT 0 | Server-computed total in integer paise (minor units) |
+| `status` | ENUM (`DRAFT`, `SUBMITTED`, `APPROVED`, `REJECTED`, `PAID`) | NOT NULL, DEFAULT `DRAFT` | Claim status |
+| `employeeId` | TEXT | FOREIGN KEY, NOT NULL | Reference to `User(id)` (employee, CASCADE on delete) |
+| `submittedAt` | TIMESTAMP(3) | NULLABLE | Timestamp when submitted for approval in UTC |
+| `paidAt` | TIMESTAMP(3) | NULLABLE | Timestamp when marked as paid in UTC |
+| `paymentReference` | TEXT | UNIQUE, NULLABLE | Mandatory unique reference provided on payment |
+| `createdAt` | TIMESTAMP(3) | NOT NULL, DEFAULT now() | Creation timestamp |
+| `updatedAt` | TIMESTAMP(3) | NOT NULL | Last update timestamp |
+
+### Indexes & Constraints
+- Index on `employeeId`
+- Index on `status`
+- Index on `createdAt`
+- Unique index on `paymentReference`
+
+---
+
+## 24. ExpenseItem
+
+Stores individual line items within an expense claim, minor unit amounts, categories, and optional receipt references.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | TEXT / UUID | PRIMARY KEY | Unique expense item ID |
+| `claimId` | TEXT | FOREIGN KEY, NOT NULL | Reference to parent `ExpenseClaim(id)` (CASCADE on delete) |
+| `category` | ENUM (`TRAVEL`, `MEALS`, `SOFTWARE`, `OFFICE`, `OTHER`) | NOT NULL | Expense category |
+| `amount` | INTEGER | NOT NULL | Minor units in integer paise |
+| `receiptUrl` | TEXT | NULLABLE | Relative or static URL to the securely stored receipt file |
+| `description` | TEXT | NULLABLE | Item description |
+| `date` | TIMESTAMP(3) | NOT NULL | Incurred date in UTC |
+| `createdAt` | TIMESTAMP(3) | NOT NULL, DEFAULT now() | Creation timestamp |
+| `updatedAt` | TIMESTAMP(3) | NOT NULL | Last update timestamp |
+
+### Indexes & Constraints
+- Index on `claimId`
+- Index on `category`
+- Index on `date`
+
+
 

@@ -44,3 +44,17 @@ export function formatKolkataDateTime(
   });
 }
 
+/**
+ * Format currency in Indian Rupees (INR) from minor units (paise)
+ */
+export function formatINR(paise: number | null | undefined): string {
+  if (paise === null || paise === undefined || isNaN(paise)) return "₹0.00";
+  const rupees = paise / 100;
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+  }).format(rupees);
+}
+

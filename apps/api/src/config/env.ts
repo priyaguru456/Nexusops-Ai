@@ -91,6 +91,15 @@ const envSchema = z.object({
   LLM_OUTPUT_PRICE_PER_MTOK: coerceNumber(15.0),
   ESCALATION_AFTER_HOURS: coerceNumber(72),
   ESCALATION_CHECK_INTERVAL_MINUTES: coerceNumber(60),
+
+  // Email / SMTP credentials
+  SMTP_HOST: optionalString,
+  SMTP_PORT: coerceNumber(587),
+  SMTP_USER: optionalString,
+  SMTP_PASS: optionalString,
+  SMTP_FROM: coerceString("NexusOps AI <noreply@nexusops.com>"),
+  SMTP_SECURE: booleanFromStr,
+  DIGEST_CHECK_INTERVAL_MINUTES: coerceNumber(15),
 });
 
 const parsed = envSchema.safeParse(process.env);

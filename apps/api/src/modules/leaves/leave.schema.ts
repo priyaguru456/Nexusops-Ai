@@ -57,8 +57,21 @@ export const holidayIdParamSchema = z.object({
   id: z.string().trim().min(1, "Holiday ID is required"),
 });
 
+export const updateHolidaySchema = z
+  .object({
+    name: z.string().trim().min(2, "Holiday name must be at least 2 characters").max(100).optional(),
+    date: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}/)).optional(),
+  })
+  .refine(
+    (data) => data.name !== undefined || data.date !== undefined,
+    {
+      message: "At least one field (name or date) must be provided for update",
+    }
+  );
+
 export type ApplyLeaveInput = z.infer<typeof applyLeaveSchema>;
 export type CancelLeaveInput = z.infer<typeof cancelLeaveSchema>;
 export type ListLeavesQuery = z.infer<typeof listLeavesQuerySchema>;
 export type LeaveBalanceQuery = z.infer<typeof leaveBalanceQuerySchema>;
 export type AddHolidayInput = z.infer<typeof addHolidaySchema>;
+export type UpdateHolidayInput = z.infer<typeof updateHolidaySchema>;

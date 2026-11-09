@@ -20,6 +20,8 @@ import {
   Plus,
   SunMoon,
   ArrowRight,
+  CalendarDays,
+  Receipt,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { searchApi, type SearchResultRequest, type SearchResultTask } from "../../features/search/api";
@@ -112,6 +114,26 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps): React.
         icon: CheckSquare,
         roles: ["EMPLOYEE", "MANAGER", "ADMIN"],
         keywords: ["tasks", "kanban", "todo", "assigned", "checklist"],
+      },
+      {
+        id: "nav-calendar",
+        type: "page",
+        title: "Operations Calendar",
+        subtitle: "Tasks, requests, approved leaves, and company holidays",
+        href: "/calendar",
+        icon: CalendarDays,
+        roles: ["EMPLOYEE", "MANAGER", "ADMIN"],
+        keywords: ["calendar", "schedule", "events", "holidays", "leave", "due dates", "agenda"],
+      },
+      {
+        id: "nav-expenses",
+        type: "page",
+        title: "Expenses & Reimbursements",
+        subtitle: "Submit expense claims, receipt uploads, and finance payout queue",
+        href: "/expenses",
+        icon: Receipt,
+        roles: ["EMPLOYEE", "MANAGER", "ADMIN"],
+        keywords: ["expenses", "reimbursement", "claims", "receipts", "payout", "finance", "money", "inr"],
       },
       {
         id: "nav-documents",

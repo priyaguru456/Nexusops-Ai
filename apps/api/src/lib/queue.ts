@@ -5,12 +5,20 @@ import { logger } from "./logger";
 
 export const DOCUMENT_QUEUE_NAME = "document-processing";
 export const ESCALATION_QUEUE_NAME = "approval-escalation";
+export const DIGEST_QUEUE_NAME = "analytics-digest";
 
 export interface DocumentJobData {
   documentId: string;
 }
 
 export interface EscalationJobData {
+  triggeredAt?: string;
+}
+
+export interface DigestJobData {
+  scheduleId?: string;
+  isTest?: boolean;
+  testRecipients?: string[];
   triggeredAt?: string;
 }
 
@@ -103,6 +111,43 @@ export function getEscalationQueue(): Queue<EscalationJobData> {
 export const escalationQueue = new Proxy({} as Queue<EscalationJobData>, {
   get(_target, prop) {
     const queue = getEscalationQueue();
+    const val = (queue as any)[prop];
+    if (typeof val === "function") {
+      return val.bind(queue);
+    }
+    return val;
+  },
+});
+
+let _digestQueue: Queue<DigestJobData> | null = null;
+
+export function getDigestQueue(): Queue<DigestJobData> {
+  if (!_digestQueue) {
+    _digestQueue = new Queue<DigestJobData>(DIGEST_QUEUE_NAME, {
+      connection: createRedisConnection(),
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+          type: "exponential",
+          delay: 3000,
+        },
+        removeOnComplete: {
+          age: 24 * 3600,
+          count: 500,
+        },
+        removeOnFail: {
+          age: 7 * 24 * 3600,
+          count: 1000,
+        },
+      },
+    });
+  }
+  return _digestQueue;
+}
+
+export const digestQueue = new Proxy({} as Queue<DigestJobData>, {
+  get(_target, prop) {
+    const queue = getDigestQueue();
     const val = (queue as any)[prop];
     if (typeof val === "function") {
       return val.bind(queue);

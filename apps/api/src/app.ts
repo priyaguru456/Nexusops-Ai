@@ -25,6 +25,9 @@ import { directoryRouter } from "./modules/directory/directory.routes";
 import { assetRouter } from "./modules/assets/asset.routes";
 import { policyRouter } from "./modules/policies/policy.routes";
 import { leaveRouter } from "./modules/leaves/leave.routes";
+import { calendarRouter } from "./modules/calendar/calendar.routes";
+import { expenseRouter } from "./modules/expenses/expense.routes";
+import { surveyRouter } from "./modules/surveys/survey.routes";
 
 export const app = express();
 
@@ -96,6 +99,9 @@ app.use("/api/directory", directoryRouter);
 app.use("/api/assets", assetRouter);
 app.use("/api/policies", policyRouter);
 app.use("/api/leaves", leaveRouter);
+app.use("/api/calendar", calendarRouter);
+app.use("/api/expenses", expenseRouter);
+app.use("/api/surveys", surveyRouter);
 
 app.use(notFound);
 app.use(errorHandler);

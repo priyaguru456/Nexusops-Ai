@@ -46,6 +46,7 @@ describe("React Testing Library: Role-based Sidebar Navigation Menu", () => {
     expect(screen.getByRole("link", { name: /dashboard/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /work requests/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /tasks/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /calendar/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /knowledge base/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /ai assistant/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /analytics/i })).toBeInTheDocument();
@@ -57,6 +58,7 @@ describe("React Testing Library: Role-based Sidebar Navigation Menu", () => {
     expect(screen.queryByRole("link", { name: /approvals/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /user management/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /audit logs/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /surveys & csat/i })).not.toBeInTheDocument();
   });
 
   it("renders exact menu items for MANAGER role", () => {
@@ -72,6 +74,7 @@ describe("React Testing Library: Role-based Sidebar Navigation Menu", () => {
     expect(screen.getByRole("link", { name: /dashboard/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /work requests/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /tasks/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /calendar/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /knowledge base/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /ai assistant/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /approvals/i })).toBeInTheDocument();
@@ -83,6 +86,7 @@ describe("React Testing Library: Role-based Sidebar Navigation Menu", () => {
     // Admin-only items must NOT be rendered
     expect(screen.queryByRole("link", { name: /user management/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /audit logs/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /surveys & csat/i })).not.toBeInTheDocument();
   });
 
   it("renders exact full menu items for ADMIN role", () => {
@@ -94,10 +98,11 @@ describe("React Testing Library: Role-based Sidebar Navigation Menu", () => {
 
     renderLayout();
 
-    // Admin sees all 10 navigation items
+    // Admin sees all navigation items including Surveys & CSAT
     expect(screen.getByRole("link", { name: /dashboard/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /work requests/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /tasks/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /calendar/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /knowledge base/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /ai assistant/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /approvals/i })).toBeInTheDocument();
@@ -105,6 +110,7 @@ describe("React Testing Library: Role-based Sidebar Navigation Menu", () => {
     expect(screen.getByRole("link", { name: /directory/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /user management/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /audit logs/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /surveys & csat/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /announcements/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /settings/i })).toBeInTheDocument();
   });

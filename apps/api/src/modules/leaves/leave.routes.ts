@@ -10,6 +10,8 @@ import {
   listLeavesQuerySchema,
   leaveBalanceQuerySchema,
   addHolidaySchema,
+  updateHolidaySchema,
+  holidayIdParamSchema,
 } from "./leave.schema";
 
 export const leaveRouter = Router();
@@ -31,6 +33,18 @@ leaveRouter.post(
   authorize(Role.ADMIN),
   validate({ body: addHolidaySchema }),
   leaveController.addHoliday
+);
+leaveRouter.put(
+  "/holidays/:id",
+  authorize(Role.ADMIN),
+  validate({ params: holidayIdParamSchema, body: updateHolidaySchema }),
+  leaveController.updateHoliday
+);
+leaveRouter.delete(
+  "/holidays/:id",
+  authorize(Role.ADMIN),
+  validate({ params: holidayIdParamSchema }),
+  leaveController.deleteHoliday
 );
 
 // 3. List Leave Requests (Scoped by Role)

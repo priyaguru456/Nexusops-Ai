@@ -1,7 +1,14 @@
 import type { Request, Response, NextFunction } from "express";
 import { AppError } from "../../lib/errors";
 import { analyticsService } from "./analytics.service";
-import { dateRangeQuerySchema, exportQuerySchema } from "./analytics.schema";
+import { digestService } from "./digest.service";
+import {
+  dateRangeQuerySchema,
+  exportQuerySchema,
+  saveDigestScheduleSchema,
+  sendTestDigestSchema,
+  digestDeliveriesQuerySchema,
+} from "./analytics.schema";
 
 export const analyticsController = {
   /**
@@ -98,6 +105,111 @@ export const analyticsController = {
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.status(200).send(csvContent);
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * GET /api/analytics/digest/schedule
+   * Admin-only: Retrieves current weekly analytics digest schedule.
+   */
+  async getDigestSchedule(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) throw AppError.unauthorized();
+      const schedule = await digestService.getSchedule();
+      res.status(200).json({
+        status: "success",
+        data: schedule,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * PUT /api/analytics/digest/schedule
+   * Admin-only: Configures or updates weekly analytics digest schedule.
+   */
+  async saveDigestSchedule(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) throw AppError.unauthorized();
+      const input = saveDigestScheduleSchema.parse(req.body);
+      const schedule = await digestService.saveSchedule(req.user.id, input);
+      res.status(200).json({
+        status: "success",
+        data: schedule,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * POST /api/analytics/digest/send-test
+   * Admin-only: Immediately sends test digest email.
+   */
+  async sendTestDigest(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) throw AppError.unauthorized();
+      const input = sendTestDigestSchema.parse(req.body);
+
+      let recipients = input.recipients;
+      let scheduleId: string | undefined;
+      let timezone = input.timezone;
+
+      const schedule = await digestService.getSchedule();
+      if (schedule) {
+        scheduleId = schedule.id;
+        if (!timezone) timezone = schedule.timezone;
+        if (!recipients || recipients.length === 0) {
+          recipients = schedule.recipients;
+        }
+      }
+
+      if (!recipients || recipients.length === 0) {
+        recipients = [req.user.email];
+      }
+
+      const result = await digestService.sendDigest({
+        scheduleId,
+        recipients,
+        timezone,
+        isTest: true,
+      });
+
+      if (!result.success) {
+        res.status(502).json({
+          status: "error",
+          message: result.error || "Failed to send test digest email",
+          data: result,
+        });
+        return;
+      }
+
+      res.status(200).json({
+        status: "success",
+        message: "Test digest email dispatched successfully",
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * GET /api/analytics/digest/deliveries?page=1&limit=20
+   * Admin-only: Retrieves delivery history.
+   */
+  async getDigestDeliveries(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) throw AppError.unauthorized();
+      const { page, limit } = digestDeliveriesQuerySchema.parse(req.query);
+      const result = await digestService.getDeliveries(page, limit);
+      res.status(200).json({
+        status: "success",
+        data: result,
+      });
     } catch (error) {
       next(error);
     }

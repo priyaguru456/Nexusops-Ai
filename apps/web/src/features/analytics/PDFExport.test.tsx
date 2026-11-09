@@ -16,6 +16,10 @@ vi.mock("./api", () => ({
   useRequestsAnalytics: vi.fn(),
   useTasksAnalytics: vi.fn(),
   useAIUsageAnalytics: vi.fn(),
+  useDigestSchedule: vi.fn(() => ({ data: null, isLoading: false, refetch: vi.fn() })),
+  useDigestDeliveries: vi.fn(() => ({ data: null, isLoading: false, refetch: vi.fn() })),
+  useSaveDigestSchedule: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useSendTestDigest: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   analyticsApi: {
     downloadCSV: vi.fn(),
   },

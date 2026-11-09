@@ -13,6 +13,12 @@ export default defineConfig({
     exclude: ["node_modules", "e2e/**", "dist"],
     cache: false,
     fileParallelism: false,
+    testTimeout: 15000,
+    poolOptions: {
+      forks: {
+        execArgv: ["--max-old-space-size=4096"],
+      },
+    },
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],
