@@ -27,6 +27,7 @@ export const aiController = {
             name: true,
             email: true,
             role: true,
+            organizationId: true,
             departmentId: true,
             isActive: true,
             createdAt: true,

@@ -14,6 +14,13 @@ import {
 import { auditService } from "../audit/audit.service";
 import { notificationService } from "../notifications/notification.service";
 import { logger } from "../../lib/logger";
+import {
+  assertSameTenant,
+  isAdminRole,
+  isSuperAdmin,
+  resolveTenantId,
+  tenantWhere,
+} from "../../lib/tenant";
 
 export function formatKolkataDateTime(date: Date | string | null | undefined): string {
   if (!date) return "N/A";
@@ -36,13 +43,23 @@ export function formatKolkataDateTime(date: Date | string | null | undefined): s
 export function canUserAccessPolicy(
   user: AuthenticatedUser,
   policy: {
+    organizationId?: string;
     visibility: DocVisibility;
     departmentId: string | null;
     targetDepartmentId: string | null;
     uploadedById: string;
   }
 ): boolean {
-  if (user.role === Role.ADMIN) return true;
+  if (
+    !isSuperAdmin(user) &&
+    user.organizationId !== undefined &&
+    policy.organizationId !== undefined &&
+    policy.organizationId !== user.organizationId
+  ) {
+    return false;
+  }
+
+  if (isAdminRole(user)) return true;
 
   // If a target department is specified, user must belong to that department
   if (policy.targetDepartmentId && policy.targetDepartmentId !== user.departmentId) {
@@ -70,7 +87,7 @@ export const policyService = {
     metadata: CreatePolicyMetadataInput,
     user: AuthenticatedUser
   ): Promise<Document> {
-    if (user.role !== Role.ADMIN) {
+    if (!isAdminRole(user)) {
       throw AppError.forbidden("Only administrators can create new policies");
     }
 
@@ -78,6 +95,7 @@ export const policyService = {
       throw AppError.badRequest("Policy document file is required");
     }
 
+    const organizationId = resolveTenantId(user);
     validateMimeAndExtension(file.originalname, file.mimetype);
     const stored = await storageService.save(file.buffer, file.originalname);
 
@@ -93,6 +111,7 @@ export const policyService = {
       version: 1,
       visibility: metadata.visibility || DocVisibility.ALL,
       status: DocStatus.UPLOADED,
+      organization: { connect: { id: organizationId } },
       department: user.departmentId ? { connect: { id: user.departmentId } } : undefined,
       targetDepartment: metadata.targetDepartmentId
         ? { connect: { id: metadata.targetDepartmentId } }
@@ -108,6 +127,7 @@ export const policyService = {
 
     await auditService.log({
       actorId: user.id,
+      organizationId,
       action: "POLICY_CREATED",
       entityType: "Policy",
       entityId: policy.id,
@@ -121,9 +141,12 @@ export const policyService = {
       },
     });
 
-    // Notify target users
+    // Notify target users within organization
     try {
-      const activeUsers = await policyRepository.findActiveUsers(metadata.targetDepartmentId || undefined);
+      const activeUsers = await policyRepository.findActiveUsers(
+        metadata.targetDepartmentId || undefined,
+        organizationId
+      );
       const userIdsToNotify = activeUsers.map((u) => u.id).filter((id) => id !== user.id);
       if (userIdsToNotify.length > 0) {
         await notificationService.notifyMultiple(
@@ -149,7 +172,7 @@ export const policyService = {
     metadata: UploadPolicyVersionMetadataInput,
     user: AuthenticatedUser
   ): Promise<Document> {
-    if (user.role !== Role.ADMIN) {
+    if (!isAdminRole(user)) {
       throw AppError.forbidden("Only administrators can upload a new policy version");
     }
 
@@ -161,6 +184,8 @@ export const policyService = {
     if (!existing || !existing.isPolicy) {
       throw AppError.notFound("Policy not found");
     }
+
+    assertSameTenant(existing.organizationId, user, "Policy not found");
 
     validateMimeAndExtension(file.originalname, file.mimetype);
     const stored = await storageService.save(file.buffer, file.originalname);
@@ -206,6 +231,7 @@ export const policyService = {
     // 4. Record audit log
     await auditService.log({
       actorId: user.id,
+      organizationId: existing.organizationId,
       action: "POLICY_NEW_VERSION_UPLOADED",
       entityType: "Policy",
       entityId: policyId,
@@ -218,10 +244,13 @@ export const policyService = {
       },
     });
 
-    // 5. Notify all eligible users that a new version requires acknowledgement
+    // 5. Notify all eligible users within organization that a new version requires acknowledgement
     try {
       const targetDeptId = updated.targetDepartmentId || undefined;
-      const activeUsers = await policyRepository.findActiveUsers(targetDeptId);
+      const activeUsers = await policyRepository.findActiveUsers(
+        targetDeptId,
+        existing.organizationId
+      );
       const recipientIds = activeUsers.map((u) => u.id).filter((id) => id !== user.id);
       if (recipientIds.length > 0) {
         await notificationService.notifyMultiple(
@@ -242,10 +271,11 @@ export const policyService = {
   },
 
   async list(query: ListPoliciesQuery, user: AuthenticatedUser) {
-    const conditions: Prisma.DocumentWhereInput[] = [{ isPolicy: true }];
+    const scope = tenantWhere(user);
+    const conditions: Prisma.DocumentWhereInput[] = [{ isPolicy: true }, ...(scope.organizationId ? [scope] : [])];
 
     // Non-admins only see policies applicable to them
-    if (user.role !== Role.ADMIN) {
+    if (!isAdminRole(user)) {
       const audienceConditions: Prisma.DocumentWhereInput[] = [
         { targetDepartmentId: null },
       ];
@@ -399,14 +429,16 @@ export const policyService = {
         acknowledgedAt: currentAck?.acknowledgedAt || null,
         version: policy.version,
       },
-      acknowledgementHistory: user.role === Role.ADMIN || user.role === Role.MANAGER ? history : undefined,
+      acknowledgementHistory: isAdminRole(user) || user.role === Role.MANAGER ? history : undefined,
     };
   },
 
   async getMyStatus(user: AuthenticatedUser) {
-    // 1. Get all policies applicable to this user
+    // 1. Get all policies applicable to this user within their organization
+    const scope = tenantWhere(user);
     const where: Prisma.DocumentWhereInput = {
       isPolicy: true,
+      ...scope,
       OR: [
         { targetDepartmentId: null },
         ...(user.departmentId ? [{ targetDepartmentId: user.departmentId }] : []),
@@ -493,6 +525,7 @@ export const policyService = {
 
     await auditService.log({
       actorId: user.id,
+      organizationId: policy.organizationId,
       action: "POLICY_ACKNOWLEDGED",
       entityType: "Policy",
       entityId: policy.id,
@@ -535,13 +568,17 @@ export const policyService = {
       scopedDepartmentId = user.departmentId;
     }
 
-    // Fetch active users in scope
-    const activeUsers = await policyRepository.findActiveUsers(scopedDepartmentId);
-    const departments = await policyRepository.findAllDepartments();
+    // Fetch active users and departments scoped to the actor's organization
+    const scope = tenantWhere(user);
+    const activeUsers = await policyRepository.findActiveUsers(
+      scopedDepartmentId,
+      scope.organizationId
+    );
+    const departments = await policyRepository.findAllDepartments(scope.organizationId);
     const departmentMap = new Map(departments.map((d) => [d.id, d.name]));
 
     // Fetch policies in scope
-    const policyWhere: Prisma.DocumentWhereInput = { isPolicy: true };
+    const policyWhere: Prisma.DocumentWhereInput = { isPolicy: true, ...scope };
     if (query.policyId) {
       policyWhere.id = query.policyId;
     }
@@ -701,11 +738,15 @@ export const policyService = {
       scopedDepartmentId = user.departmentId;
     }
 
-    const activeUsers = await policyRepository.findActiveUsers(scopedDepartmentId);
-    const departments = await policyRepository.findAllDepartments();
+    const scope = tenantWhere(user);
+    const activeUsers = await policyRepository.findActiveUsers(
+      scopedDepartmentId,
+      scope.organizationId
+    );
+    const departments = await policyRepository.findAllDepartments(scope.organizationId);
     const departmentMap = new Map(departments.map((d) => [d.id, d.name]));
 
-    const policyWhere: Prisma.DocumentWhereInput = { isPolicy: true };
+    const policyWhere: Prisma.DocumentWhereInput = { isPolicy: true, ...scope };
     if (query.policyId) {
       policyWhere.id = query.policyId;
     }
@@ -792,6 +833,7 @@ export const policyService = {
 
     await auditService.log({
       actorId: user.id,
+      organizationId: resolveTenantId(user),
       action: "POLICY_COMPLIANCE_EXPORTED",
       entityType: "Policy",
       entityId: scopedDepartmentId || "ALL",

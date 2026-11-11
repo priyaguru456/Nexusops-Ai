@@ -1,7 +1,14 @@
 import { Role, LeaveStatus, Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { isAdminRole, isSuperAdmin, resolveTenantId } from "../../lib/tenant";
 import type { AuthenticatedUser } from "../../types/express";
 import type { CalendarEventDTO, GetCalendarEventsQuery } from "./calendar.schema";
+
+function resolveOptionalCalendarOrgId(user: AuthenticatedUser): string | undefined {
+  if (user.organizationId === undefined) return undefined;
+  if (isSuperAdmin(user) && !user.organizationId) return undefined;
+  return resolveTenantId(user);
+}
 
 export class CalendarService {
   /**
@@ -44,6 +51,8 @@ export class CalendarService {
     const includeLeaves = requestedTypes.includes("leaves");
     const includeHolidays = requestedTypes.includes("holidays");
 
+    const orgId = resolveOptionalCalendarOrgId(user);
+
     const promises: [
       Promise<any[]>,
       Promise<any[]>,
@@ -53,7 +62,7 @@ export class CalendarService {
       includeTasks ? this.fetchTasks(startDate, endDate, user) : Promise.resolve([]),
       includeRequests ? this.fetchRequests(startDate, endDate, user) : Promise.resolve([]),
       includeLeaves ? this.fetchApprovedLeaves(startDate, endDate, user) : Promise.resolve([]),
-      includeHolidays ? this.fetchHolidays(startDate, endDate) : Promise.resolve([]),
+      includeHolidays ? this.fetchHolidays(startDate, endDate, orgId) : Promise.resolve([]),
     ];
 
     const [tasks, requests, leaves, holidays] = await Promise.all(promises);
@@ -113,7 +122,7 @@ export class CalendarService {
         reason: l.reason,
         status: l.status,
         departmentName: l.user.department?.name ?? null,
-        link: user.role === Role.ADMIN || user.role === Role.MANAGER ? "/approvals" : "/dashboard",
+        link: isAdminRole(user) || user.role === Role.MANAGER ? "/approvals" : "/dashboard",
       },
     }));
 
@@ -149,9 +158,10 @@ export class CalendarService {
    * Fetches role-scoped tasks having due dates in range.
    */
   private async fetchTasks(startDate: Date, endDate: Date, user: AuthenticatedUser) {
+    const orgId = resolveOptionalCalendarOrgId(user);
     let visibilityFilter: Prisma.TaskWhereInput = {};
 
-    if (user.role === Role.ADMIN) {
+    if (isAdminRole(user)) {
       visibilityFilter = {};
     } else if (user.role === Role.MANAGER) {
       if (user.departmentId) {
@@ -177,6 +187,7 @@ export class CalendarService {
 
     return prisma.task.findMany({
       where: {
+        ...(orgId ? { organizationId: orgId } : {}),
         dueDate: {
           gte: startDate,
           lte: endDate,
@@ -196,9 +207,10 @@ export class CalendarService {
    * Fetches role-scoped requests having target/due dates in range.
    */
   private async fetchRequests(startDate: Date, endDate: Date, user: AuthenticatedUser) {
+    const orgId = resolveOptionalCalendarOrgId(user);
     let visibilityFilter: Prisma.WorkRequestWhereInput = {};
 
-    if (user.role === Role.ADMIN) {
+    if (isAdminRole(user)) {
       visibilityFilter = {};
     } else if (user.role === Role.MANAGER) {
       if (user.departmentId) {
@@ -218,6 +230,7 @@ export class CalendarService {
 
     return prisma.workRequest.findMany({
       where: {
+        ...(orgId ? { organizationId: orgId } : {}),
         dueDate: {
           gte: startDate,
           lte: endDate,
@@ -238,9 +251,10 @@ export class CalendarService {
    * Employees see their own leaves; Managers see their team's leaves; Admins see all.
    */
   private async fetchApprovedLeaves(startDate: Date, endDate: Date, user: AuthenticatedUser) {
+    const orgId = resolveOptionalCalendarOrgId(user);
     let userFilter: Prisma.LeaveRequestWhereInput = {};
 
-    if (user.role === Role.ADMIN) {
+    if (isAdminRole(user)) {
       userFilter = {};
     } else if (user.role === Role.MANAGER) {
       // Team's leaves: self + direct reports + department members
@@ -260,6 +274,7 @@ export class CalendarService {
 
     return prisma.leaveRequest.findMany({
       where: {
+        ...(orgId ? { organizationId: orgId } : {}),
         status: LeaveStatus.APPROVED,
         startDate: { lte: endDate },
         endDate: { gte: startDate },
@@ -285,11 +300,12 @@ export class CalendarService {
   }
 
   /**
-   * Fetches company holidays in range. All authenticated users see company holidays.
+   * Fetches company holidays in range. All authenticated users see company holidays in their organization.
    */
-  private async fetchHolidays(startDate: Date, endDate: Date) {
+  private async fetchHolidays(startDate: Date, endDate: Date, organizationId?: string) {
     return prisma.holiday.findMany({
       where: {
+        ...(organizationId ? { organizationId } : {}),
         date: {
           gte: startDate,
           lte: endDate,

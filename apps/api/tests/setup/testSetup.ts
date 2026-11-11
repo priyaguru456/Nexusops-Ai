@@ -61,7 +61,20 @@ async function isDatabaseReachable(): Promise<boolean> {
       s.destroy();
       resolve(false);
     });
-    s.connect(5432, "127.0.0.1");
+    const dbUrl =
+      process.env.DATABASE_URL_TEST ||
+      process.env.DATABASE_URL ||
+      "postgresql://postgres:postgres@127.0.0.1:5432/nexusops_ai_test";
+    let dbHost = "127.0.0.1";
+    let dbPort = 5432;
+    try {
+      const parsed = new URL(dbUrl);
+      dbHost = parsed.hostname === "localhost" ? "127.0.0.1" : parsed.hostname || "127.0.0.1";
+      dbPort = Number(parsed.port) || 5432;
+    } catch {
+      // fallback to defaults
+    }
+    s.connect(dbPort, dbHost);
   });
   return dbReachableCache;
 }
@@ -79,6 +92,17 @@ export async function truncateAllTables() {
         `TRUNCATE TABLE "${tablename}" RESTART IDENTITY CASCADE;`
       );
     }
+
+    await prisma.organization.upsert({
+      where: { slug: "default" },
+      update: { isActive: true },
+      create: {
+        id: "00000000-0000-4000-8000-000000000001",
+        name: "NexusOps Default",
+        slug: "default",
+        isActive: true,
+      },
+    });
   } catch (err) {
     // If database is not connected or in unit test mode, gracefully ignore
   }

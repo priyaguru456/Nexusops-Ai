@@ -1,5 +1,6 @@
 import { DigestSchedule, DigestDelivery, DigestDeliveryStatus, Role } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { DEFAULT_ORGANIZATION_ID } from "../../lib/tenant";
 import { analyticsService, AnalyticsOverview } from "./analytics.service";
 import { emailService } from "../../lib/email.service";
 import { auditService } from "../audit/audit.service";
@@ -93,10 +94,11 @@ export function isScheduleDue(schedule: DigestSchedule, now: Date = new Date()):
 
 export class DigestService {
   /**
-   * Retrieves the configured DigestSchedule (or null if none exists).
+   * Retrieves the configured DigestSchedule for an organization (or null if none exists).
    */
-  async getSchedule(): Promise<DigestSchedule | null> {
+  async getSchedule(organizationId?: string): Promise<DigestSchedule | null> {
     return prisma.digestSchedule.findFirst({
+      where: organizationId ? { organizationId } : undefined,
       orderBy: { createdAt: "desc" },
       include: {
         creator: {
@@ -111,7 +113,7 @@ export class DigestService {
   }
 
   /**
-   * Upserts the weekly digest schedule.
+   * Upserts the weekly digest schedule for an organization.
    */
   async saveSchedule(
     userId: string,
@@ -121,7 +123,8 @@ export class DigestService {
       hour: number;
       timezone?: string;
       isActive?: boolean;
-    }
+    },
+    organizationId: string = DEFAULT_ORGANIZATION_ID
   ): Promise<DigestSchedule> {
     const timezone = data.timezone || "Asia/Kolkata";
     const isActive = data.isActive !== undefined ? data.isActive : true;
@@ -132,6 +135,7 @@ export class DigestService {
     );
 
     const existing = await prisma.digestSchedule.findFirst({
+      where: { organizationId },
       orderBy: { createdAt: "desc" },
     });
 
@@ -150,6 +154,7 @@ export class DigestService {
     } else {
       saved = await prisma.digestSchedule.create({
         data: {
+          organizationId,
           recipients,
           dayOfWeek: data.dayOfWeek,
           hour: data.hour,
@@ -162,6 +167,7 @@ export class DigestService {
 
     // Record audit log
     await auditService.log({
+      organizationId,
       actorId: userId,
       action: "DIGEST_SCHEDULE_CONFIGURED",
       entityType: "DIGEST_SCHEDULE",
@@ -180,17 +186,23 @@ export class DigestService {
   }
 
   /**
-   * Returns recent deliveries ordered by sentAt descending.
+   * Returns recent deliveries ordered by sentAt descending, scoped to an organization when specified.
    */
-  async getDeliveries(page = 1, limit = 20): Promise<{
+  async getDeliveries(
+    page = 1,
+    limit = 20,
+    organizationId?: string
+  ): Promise<{
     deliveries: DigestDelivery[];
     total: number;
     page: number;
     totalPages: number;
   }> {
     const skip = (page - 1) * limit;
+    const where = organizationId ? { schedule: { organizationId } } : undefined;
     const [deliveries, total] = await Promise.all([
       prisma.digestDelivery.findMany({
+        where,
         skip,
         take: limit,
         orderBy: { sentAt: "desc" },
@@ -203,7 +215,7 @@ export class DigestService {
           },
         },
       }),
-      prisma.digestDelivery.count(),
+      prisma.digestDelivery.count({ where }),
     ]);
 
     return {
@@ -240,13 +252,18 @@ export class DigestService {
   /**
    * Compiles the previous 7 days KPI summary using existing analytics service queries.
    */
-  async compileDigestSummary(fromDate: Date, toDate: Date): Promise<AnalyticsOverview> {
+  async compileDigestSummary(
+    fromDate: Date,
+    toDate: Date,
+    organizationId: string | null = DEFAULT_ORGANIZATION_ID
+  ): Promise<AnalyticsOverview> {
     const systemAdmin: AuthenticatedUser = {
       id: "system-admin-digest",
       name: "NexusOps System",
       email: "system@nexusops.com",
-      role: Role.ADMIN,
+      role: organizationId === null ? Role.SUPER_ADMIN : Role.ADMIN,
       isActive: true,
+      organizationId,
       departmentId: null,
       managerId: null,
       createdAt: new Date(),
@@ -469,6 +486,7 @@ export class DigestService {
    */
   async sendDigest(options: {
     scheduleId?: string;
+    organizationId?: string | null;
     recipients: string[];
     isTest?: boolean;
     timezone?: string;
@@ -495,8 +513,12 @@ export class DigestService {
     });
 
     try {
-      // 2. Compile real KPI overview
-      const overview = await this.compileDigestSummary(fromDate, toDate);
+      // 2. Compile real KPI overview scoped to organization
+      const overview = await this.compileDigestSummary(
+        fromDate,
+        toDate,
+        options.organizationId !== undefined ? options.organizationId : DEFAULT_ORGANIZATION_ID
+      );
 
       // 3. Render email HTML
       const html = this.renderDigestHtml(overview, fromDate, toDate, tz);
@@ -577,6 +599,7 @@ export class DigestService {
 
           await this.sendDigest({
             scheduleId: schedule.id,
+            organizationId: schedule.organizationId,
             recipients: schedule.recipients,
             timezone: schedule.timezone,
             isTest: false,

@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { auditService } from "./audit.service";
 import { AppError } from "../../lib/errors";
+import { tenantWhere } from "../../lib/tenant";
 import type { GetAuditLogsQuery, ExportAuditLogsQuery } from "./audit.schema";
 
 function escapeCsvCell(val: unknown): string {
@@ -43,6 +44,7 @@ export class AuditController {
       const query = req.query as unknown as GetAuditLogsQuery;
 
       const result = await auditService.getLogs({
+        ...tenantWhere(req.user),
         action: query.action,
         entityType: query.entityType,
         entityId: query.entityId,
@@ -66,6 +68,7 @@ export class AuditController {
       const query = req.query as unknown as ExportAuditLogsQuery;
 
       const logs = await auditService.getLogsForExport({
+        ...tenantWhere(req.user),
         action: query.action,
         entityType: query.entityType,
         entityId: query.entityId,

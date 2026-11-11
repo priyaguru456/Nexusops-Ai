@@ -12,6 +12,7 @@ export interface CreateCommentData {
   entityId: string;
   body: string;
   userId: string;
+  organizationId: string;
 }
 
 export class CommentRepository {
@@ -22,6 +23,7 @@ export class CommentRepository {
         entityId: data.entityId,
         body: data.body,
         userId: data.userId,
+        organizationId: data.organizationId,
       },
       include: {
         user: {
@@ -31,7 +33,7 @@ export class CommentRepository {
     });
   }
 
-  async findByEntity(entityType: string, entityId: string) {
+  async findByEntity(entityType: string, entityId: string, organizationId?: string) {
     const alternativeType =
       entityType === "request" ? "WorkRequest" : entityType === "task" ? "Task" : entityType;
 
@@ -41,6 +43,7 @@ export class CommentRepository {
         entityType: {
           in: [entityType, alternativeType],
         },
+        ...(organizationId ? { organizationId } : {}),
       },
       orderBy: {
         createdAt: "asc",

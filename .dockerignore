@@ -1,0 +1,34 @@
+# Dependency directories
+node_modules
+apps/*/node_modules
+
+# Build outputs
+dist
+apps/*/dist
+coverage
+apps/*/coverage
+
+# Environment & local secrets
+.env
+.env.*
+apps/*/.env
+apps/*/.env.*
+!.env.example
+!apps/*/.env.example
+
+# Uploads & test artifacts
+uploads
+apps/api/uploads/*
+!apps/api/uploads/.gitkeep
+playwright-report
+test-results
+apps/web/playwright-report
+apps/web/test-results
+
+# Logs, OS, IDE & Git
+*.log
+.DS_Store
+Thumbs.db
+.git
+.vscode
+.idea

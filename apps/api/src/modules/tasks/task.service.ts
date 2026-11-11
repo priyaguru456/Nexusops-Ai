@@ -9,23 +9,32 @@ import { canTransitionTask } from "./task.state-machine";
 import { auditService } from "../audit/audit.service";
 import { notificationService } from "../notifications/notification.service";
 import { AppError } from "../../lib/errors";
+import {
+  assertSameTenant,
+  isAdminRole,
+  resolveTenantId,
+  tenantWhere,
+} from "../../lib/tenant";
 import type { AuthenticatedUser } from "../../types/express";
 
 export class TaskService {
   /**
    * Builds the visibility query based on RBAC rules:
-   * - Employees see only their own tasks (assigned to them or on their requests)
-   * - Managers see own + their department's tasks
-   * - Admins see all
+   * - Employees see only their own tasks within their organization
+   * - Managers see own + their department's tasks within their organization
+   * - Admins see all within their organization
    */
   private buildVisibilityFilter(user: AuthenticatedUser): Prisma.TaskWhereInput {
-    if (user.role === Role.ADMIN) {
-      return {};
+    const scope = tenantWhere(user);
+
+    if (isAdminRole(user)) {
+      return scope;
     }
 
     if (user.role === Role.MANAGER) {
       if (user.departmentId) {
         return {
+          ...scope,
           OR: [
             { assigneeId: user.id },
             { assignedById: user.id },
@@ -35,12 +44,14 @@ export class TaskService {
         };
       }
       return {
+        ...scope,
         OR: [{ assigneeId: user.id }, { assignedById: user.id }],
       };
     }
 
     // Role.EMPLOYEE
     return {
+      ...scope,
       OR: [
         { assigneeId: user.id },
         { request: { requesterId: user.id } },
@@ -53,6 +64,7 @@ export class TaskService {
    */
   private assertCanViewTask(
     task: {
+      organizationId?: string;
       assigneeId: string | null;
       assignedById: string | null;
       assignee: { departmentId: string | null } | null;
@@ -63,7 +75,9 @@ export class TaskService {
     },
     user: AuthenticatedUser
   ): void {
-    if (user.role === Role.ADMIN) return;
+    assertSameTenant(task.organizationId, user, "Task not found");
+
+    if (isAdminRole(user)) return;
 
     if (user.role === Role.MANAGER) {
       if (task.assigneeId === user.id || task.assignedById === user.id) return;
@@ -87,21 +101,24 @@ export class TaskService {
 
   async createTask(
     user: AuthenticatedUser,
-    data: Omit<CreateTaskData, "assignedById">
+    data: Omit<CreateTaskData, "assignedById" | "organizationId">
   ) {
     // Only managers and admins can assign tasks upon creation
     if (data.assigneeId && user.role === Role.EMPLOYEE) {
       throw AppError.forbidden("Only managers and admins can assign tasks");
     }
 
+    const organizationId = resolveTenantId(user);
     const assignedById = data.assigneeId ? user.id : null;
     const task = await taskRepository.create({
       ...data,
       assignedById,
+      organizationId,
     });
 
     await auditService.log({
       actorId: user.id,
+      organizationId,
       action: "TASK_CREATED",
       entityType: "Task",
       entityId: task.id,
@@ -169,6 +186,7 @@ export class TaskService {
 
     await auditService.log({
       actorId: user.id,
+      organizationId: task.organizationId,
       action: "TASK_UPDATED",
       entityType: "Task",
       entityId: id,
@@ -196,11 +214,14 @@ export class TaskService {
       throw AppError.notFound("Task not found");
     }
 
+    assertSameTenant(task.organizationId, user, "Task not found");
+
     const previousAssigneeId = task.assigneeId;
     const updated = await taskRepository.assign(id, assigneeId, user.id);
 
     await auditService.log({
       actorId: user.id,
+      organizationId: task.organizationId,
       action: "TASK_ASSIGNED",
       entityType: "Task",
       entityId: id,
@@ -236,8 +257,10 @@ export class TaskService {
       throw AppError.notFound("Task not found");
     }
 
+    assertSameTenant(task.organizationId, user, "Task not found");
+
     const isCreator = task.assignedById === user.id;
-    const isManagerOrAdmin = user.role === Role.MANAGER || user.role === Role.ADMIN;
+    const isManagerOrAdmin = user.role === Role.MANAGER || isAdminRole(user);
     if (!isCreator && !isManagerOrAdmin) {
       throw AppError.forbidden("You do not have permission to delete this task");
     }
@@ -246,6 +269,7 @@ export class TaskService {
 
     await auditService.log({
       actorId: user.id,
+      organizationId: task.organizationId,
       action: "TASK_DELETED",
       entityType: "Task",
       entityId: id,

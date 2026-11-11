@@ -1,0 +1,1883 @@
+openapi: 3.0.3
+info:
+  title: NexusOps AI Enterprise Operations API
+  version: 1.0.0
+  description: |
+    REST and SSE streaming API for NexusOps AI, a multi-tenant internal operations,
+    workflow approval, document management, and Retrieval-Augmented Generation (RAG) platform.
+
+    **Authentication & Security**
+    - Short-lived JWT Access Tokens (`Authorization: Bearer <token>`) paired with rotating `httpOnly` Refresh Token cookies.
+    - Public email-token password recovery (`/auth/forgot-password`, `/auth/reset-password`).
+    - Multi-tenant isolation keyed by `organizationId` across tenant-scoped resources and pgvector retrieval.
+    - Hierarchical RBAC: `EMPLOYEE` < `MANAGER` < `ADMIN` < `SUPER_ADMIN` (platform governance).
+servers:
+  - url: /api
+    description: Relative API prefix (Nginx reverse proxy / frontend integration)
+  - url: http://localhost:4000/api
+    description: Local Express API server
+tags:
+  - name: Health
+    description: Service readiness and PostgreSQL connectivity probes
+  - name: Auth
+    description: Authentication, session rotation, and password recovery
+  - name: Organizations
+    description: Super Admin multi-tenant organization provisioning and governance
+  - name: Users
+    description: User directory administration, roles, and account activation
+  - name: Requests
+    description: Work request lifecycle, submissions, status transitions, and attachments
+  - name: Tasks
+    description: Operational tasks derived from approved requests
+  - name: Approvals
+    description: Multi-step approval queues and configurable approval flows
+  - name: Comments
+    description: Threaded discussions attached to requests and tasks
+  - name: Documents
+    description: Knowledge base document ingestion, versioning, and binary download
+  - name: AI Assistant
+    description: RAG Q&A streaming chat, session management, feedback, and retrieval debugging
+  - name: Analytics
+    description: Operational metrics, AI usage telemetry, CSV exports, and digest schedules
+  - name: Search
+    description: Cross-entity global workspace search
+  - name: Announcements
+    description: Company and department communications with read tracking
+  - name: Directory
+    description: Employee directory, organizational chart, and team hierarchy
+  - name: Assets
+    description: IT hardware inventory, assignments, returns, and retirements
+  - name: Policies
+    description: Policy distribution, versioning, and employee acknowledgements
+  - name: Leaves
+    description: Leave balances, company holidays, and PTO approval workflows
+  - name: Calendar
+    description: Unified calendar of holidays, leave schedules, and due dates
+  - name: Expenses
+    description: Expense claim drafts, receipt uploads, itemization, and reimbursement
+  - name: Surveys
+    description: CSAT feedback prompts, survey builders, and aggregated results
+  - name: Notifications
+    description: In-app user notifications and read counters
+  - name: Audit Logs
+    description: Compliance audit trail query and CSV export
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health and database readiness check
+      security: []
+      responses:
+        "200":
+          description: Service and PostgreSQL are healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  service: { type: string, example: nexusops-api }
+                  timestamp: { type: string, format: date-time }
+                  database: { type: string, example: connected }
+        "503":
+          description: Database unreachable
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new employee account in a workspace
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string, minLength: 2, maxLength: 100 }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                departmentId: { type: string, format: uuid }
+                organizationSlug:
+                  type: string
+                  example: default
+                  description: Optional target organization slug (defaults to platform default workspace)
+      responses:
+        "201":
+          description: Registered user and initial access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "403":
+          description: Target organization is suspended
+        "404":
+          description: Organization slug not found
+        "409":
+          description: Email already registered
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Authenticate with email and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200":
+          description: Authenticated user session and access token (sets refreshToken httpOnly cookie)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionResponse"
+        "401":
+          description: Invalid credentials
+        "403":
+          description: Account deactivated or organization suspended
+        "429":
+          description: Rate limit exceeded
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate refresh token cookie and issue a fresh access token
+      security:
+        - refreshCookie: []
+      responses:
+        "200":
+          description: Fresh JWT access token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken: { type: string }
+        "401":
+          description: Invalid or expired refresh token
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke refresh token session and clear cookie
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/MessageSuccess"
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request a single-use password reset link via email
+      description: Always returns a generic success message to prevent email enumeration.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "200":
+          $ref: "#/components/responses/MessageSuccess"
+        "429":
+          description: Password reset request rate limit exceeded
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Consume a password reset token and update password
+      description: Validates token hash and expiry, updates password hash, and revokes all active refresh tokens.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, newPassword]
+              properties:
+                token: { type: string }
+                newPassword: { type: string, minLength: 8 }
+      responses:
+        "200":
+          $ref: "#/components/responses/MessageSuccess"
+        "400":
+          description: Invalid or expired reset token
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Fetch current authenticated user profile
+      responses:
+        "200":
+          description: User profile with department and organization summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+    patch:
+      tags: [Auth]
+      summary: Update current user display name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 2 }
+      responses:
+        "200":
+          description: Updated user object
+
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Change password while authenticated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string }
+                newPassword: { type: string, minLength: 8 }
+      responses:
+        "200":
+          $ref: "#/components/responses/MessageSuccess"
+
+  /organizations:
+    get:
+      tags: [Organizations]
+      summary: List all tenant organizations (SUPER_ADMIN only)
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: isActive
+          schema: { type: boolean }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          description: Paginated organization records with entity counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Organization"
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+                  totalPages: { type: integer }
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+    post:
+      tags: [Organizations]
+      summary: Provision a new tenant organization and optional initial admin (SUPER_ADMIN only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, slug]
+              properties:
+                name: { type: string, minLength: 2 }
+                slug: { type: string, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" }
+                adminName: { type: string }
+                adminEmail: { type: string, format: email }
+                adminPassword: { type: string, minLength: 8 }
+      responses:
+        "201":
+          description: Created organization and optional initial admin account
+        "409":
+          description: Slug or admin email conflict
+
+  /organizations/{id}:
+    get:
+      tags: [Organizations]
+      summary: Get single organization details and usage counts (SUPER_ADMIN only)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Organization detail payload
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+    patch:
+      tags: [Organizations]
+      summary: Update organization name, slug, or active status (SUPER_ADMIN only)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                slug: { type: string }
+                isActive: { type: boolean }
+      responses:
+        "200":
+          description: Updated organization
+
+  /users:
+    get:
+      tags: [Users]
+      summary: List tenant users with search, role, and status filters (ADMIN / SUPER_ADMIN)
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: role
+          schema:
+            $ref: "#/components/schemas/Role"
+        - in: query
+          name: isActive
+          schema: { type: boolean }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          description: Paginated list of users
+
+  /users/me:
+    patch:
+      tags: [Users]
+      summary: Update authenticated user name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+      responses:
+        "200":
+          description: Updated user
+
+  /users/me/password:
+    post:
+      tags: [Users]
+      summary: Change current user password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string }
+                newPassword: { type: string, minLength: 8 }
+      responses:
+        "200":
+          $ref: "#/components/responses/MessageSuccess"
+
+  /users/{id}/role:
+    patch:
+      tags: [Users]
+      summary: Assign user role within organization (ADMIN; SUPER_ADMIN for SUPER_ADMIN promotion)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  $ref: "#/components/schemas/Role"
+      responses:
+        "200":
+          description: Updated user role
+
+  /users/{id}/status:
+    patch:
+      tags: [Users]
+      summary: Activate or deactivate a user account (ADMIN / SUPER_ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [isActive]
+              properties:
+                isActive: { type: boolean }
+      responses:
+        "200":
+          description: Updated account activation state
+
+  /requests:
+    get:
+      tags: [Requests]
+      summary: List work requests scoped by tenant and user role
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: category
+          schema: { type: string }
+        - in: query
+          name: priority
+          schema: { type: string }
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer }
+        - in: query
+          name: limit
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Paginated work requests
+    post:
+      tags: [Requests]
+      summary: Create a draft or submitted work request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkRequestInput"
+      responses:
+        "201":
+          description: Created work request
+
+  /requests/counts:
+    get:
+      tags: [Requests]
+      summary: Get status count breakdown for accessible requests
+      responses:
+        "200":
+          description: Status count map
+
+  /requests/{id}:
+    get:
+      tags: [Requests]
+      summary: Retrieve single work request details
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Detailed work request including approval steps and attachments
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+    patch:
+      tags: [Requests]
+      summary: Edit a draft work request
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkRequestInput"
+      responses:
+        "200":
+          description: Updated work request
+
+  /requests/{id}/activity:
+    get:
+      tags: [Requests]
+      summary: View activity and audit history for a request
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Chronological activity items
+
+  /requests/{id}/submit:
+    post:
+      tags: [Requests]
+      summary: Submit a draft request into the configured approval workflow
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Request transitioned to SUBMITTED or IN_REVIEW
+
+  /requests/{id}/cancel:
+    post:
+      tags: [Requests]
+      summary: Cancel a work request
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Cancelled request
+
+  /requests/{id}/status:
+    patch:
+      tags: [Requests]
+      summary: Transition an approved request status (IN_PROGRESS / COMPLETED)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [IN_PROGRESS, COMPLETED] }
+      responses:
+        "200":
+          description: Updated request status
+
+  /requests/{id}/attachments:
+    post:
+      tags: [Requests]
+      summary: Upload file attachments onto a work request
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "201":
+          description: Attachment metadata saved
+
+  /tasks:
+    get:
+      tags: [Tasks]
+      summary: List operational tasks scoped by tenant and assignee permissions
+      responses:
+        "200":
+          description: Paginated task list
+    post:
+      tags: [Tasks]
+      summary: Create a task linked to an approved request or standalone (MANAGER / ADMIN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskInput"
+      responses:
+        "201":
+          description: Created task
+
+  /tasks/{id}:
+    get:
+      tags: [Tasks]
+      summary: Fetch single task detail
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Task record
+    patch:
+      tags: [Tasks]
+      summary: Update task status or fields
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [TODO, IN_PROGRESS, BLOCKED, DONE] }
+                title: { type: string }
+                priority: { type: string, enum: [LOW, MEDIUM, HIGH, URGENT] }
+      responses:
+        "200":
+          description: Updated task
+    delete:
+      tags: [Tasks]
+      summary: Delete a task (ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          $ref: "#/components/responses/MessageSuccess"
+
+  /tasks/{id}/assign:
+    patch:
+      tags: [Tasks]
+      summary: Reassign a task to an organization user (MANAGER / ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assigneeId]
+              properties:
+                assigneeId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Reassigned task
+
+  /approval-flows:
+    get:
+      tags: [Approvals]
+      summary: List approval workflow definitions for the organization
+      responses:
+        "200":
+          description: Approval flow definitions
+    post:
+      tags: [Approvals]
+      summary: Create a multi-step approval workflow rule (ADMIN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, steps]
+              properties:
+                name: { type: string }
+                category: { type: string, nullable: true }
+                minPriority: { type: string, nullable: true }
+                steps:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      stepOrder: { type: integer }
+                      approverRole: { $ref: "#/components/schemas/Role" }
+                      approverId: { type: string, format: uuid, nullable: true }
+      responses:
+        "201":
+          description: Created approval flow
+
+  /approval-flows/{id}:
+    get:
+      tags: [Approvals]
+      summary: Retrieve single approval flow definition
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Approval flow
+    patch:
+      tags: [Approvals]
+      summary: Update an approval flow definition (ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Updated approval flow
+    delete:
+      tags: [Approvals]
+      summary: Delete an approval flow definition (ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          $ref: "#/components/responses/MessageSuccess"
+
+  /approvals/pending:
+    get:
+      tags: [Approvals]
+      summary: Retrieve approval steps currently awaiting the caller action
+      responses:
+        "200":
+          description: Pending approval steps
+
+  /approvals/bulk-approve:
+    post:
+      tags: [Approvals]
+      summary: Approve multiple pending approval steps in one batch (MANAGER / ADMIN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stepIds]
+              properties:
+                stepIds:
+                  type: array
+                  items: { type: string, format: uuid }
+                decisionNote: { type: string }
+      responses:
+        "200":
+          description: Summary of approved steps
+
+  /approvals/{stepId}/approve:
+    post:
+      tags: [Approvals]
+      summary: Approve an individual workflow step
+      parameters:
+        - $ref: "#/components/parameters/StepId"
+      responses:
+        "200":
+          description: Approved step and updated entity status
+
+  /approvals/{stepId}/reject:
+    post:
+      tags: [Approvals]
+      summary: Reject a workflow step with mandatory decision note
+      parameters:
+        - $ref: "#/components/parameters/StepId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decisionNote]
+              properties:
+                decisionNote: { type: string }
+      responses:
+        "200":
+          description: Rejected step and parent entity state
+
+  /approvals/{stepId}/reassign:
+    post:
+      tags: [Approvals]
+      summary: Reassign a pending approval step to another eligible approver
+      parameters:
+        - $ref: "#/components/parameters/StepId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approverId]
+              properties:
+                approverId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Reassigned approval step
+
+  /comments:
+    get:
+      tags: [Comments]
+      summary: List comments for a request or task
+      parameters:
+        - in: query
+          name: requestId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: taskId
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Chronological comments list
+    post:
+      tags: [Comments]
+      summary: Post a new comment onto a work request or task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string }
+                requestId: { type: string, format: uuid }
+                taskId: { type: string, format: uuid }
+      responses:
+        "201":
+          description: Created comment
+
+  /documents:
+    get:
+      tags: [Documents]
+      summary: List knowledge base documents visible to the caller
+      responses:
+        "200":
+          description: Paginated documents filtered by tenant and DocVisibility rules
+    post:
+      tags: [Documents]
+      summary: Upload a document (PDF, DOCX, TXT, MD, CSV) and enqueue background RAG indexing
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, title]
+              properties:
+                file: { type: string, format: binary }
+                title: { type: string }
+                category: { type: string }
+                visibility:
+                  type: string
+                  enum: [ALL, DEPARTMENT, MANAGERS, ADMIN_ONLY]
+                departmentId: { type: string, format: uuid }
+      responses:
+        "201":
+          description: Document queued with status UPLOADED
+
+  /documents/{id}:
+    get:
+      tags: [Documents]
+      summary: Retrieve document metadata and ingestion status
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Document detail
+    delete:
+      tags: [Documents]
+      summary: Delete document, chunks, and disk file (ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          $ref: "#/components/responses/MessageSuccess"
+
+  /documents/{id}/file:
+    get:
+      tags: [Documents]
+      summary: Download raw document file if permitted
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Binary file stream
+
+  /documents/{id}/reprocess:
+    post:
+      tags: [Documents]
+      summary: Re-enqueue document extraction and embedding pipeline
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "202":
+          description: Document queued for reprocessing
+
+  /documents/{id}/versions:
+    post:
+      tags: [Documents]
+      summary: Upload a new document version and supersede previous chunks
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "201":
+          description: Version uploaded and queued
+
+  /ai/chat:
+    post:
+      tags: [AI Assistant]
+      summary: Ask a question grounded in tenant-permitted knowledge documents (SSE stream)
+      description: Streams Server-Sent Events (`citations`, `token`, `done`) grounded strictly via pgvector + PostgreSQL full-text hybrid search with RRF scoring.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question: { type: string, minLength: 2 }
+                sessionId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Server-Sent Events stream with tokens and page-level citations
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /ai/sessions:
+    get:
+      tags: [AI Assistant]
+      summary: List caller AI chat sessions within their organization
+      responses:
+        "200":
+          description: Chat session history list
+
+  /ai/sessions/{id}:
+    get:
+      tags: [AI Assistant]
+      summary: Retrieve full message history for a chat session
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Chat session and messages
+    patch:
+      tags: [AI Assistant]
+      summary: Rename an AI chat session
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+      responses:
+        "200":
+          description: Renamed session
+    delete:
+      tags: [AI Assistant]
+      summary: Delete an AI chat session
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          $ref: "#/components/responses/MessageSuccess"
+
+  /ai/messages/{id}/feedback:
+    post:
+      tags: [AI Assistant]
+      summary: Submit thumbs-up/down helpfulness rating on an assistant response
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating]
+              properties:
+                rating: { type: integer, enum: [-1, 1] }
+                comment: { type: string }
+      responses:
+        "200":
+          description: Recorded feedback
+
+  /ai/debug/retrieve:
+    post:
+      tags: [AI Assistant]
+      summary: Inspect raw hybrid vector + FTS chunk retrieval scores without LLM generation (ADMIN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: { type: string }
+      responses:
+        "200":
+          description: Ranked chunks with cosine, FTS, and RRF scores
+
+  /ai/admin/reembed:
+    post:
+      tags: [AI Assistant]
+      summary: Trigger re-embedding of ready documents within tenant (ADMIN)
+      responses:
+        "200":
+          description: Enqueued count
+
+  /analytics/overview:
+    get:
+      tags: [Analytics]
+      summary: Retrieve high-level request, task, approval, and SLA KPIs (MANAGER / ADMIN)
+      parameters:
+        - in: query
+          name: from
+          schema: { type: string, format: date }
+        - in: query
+          name: to
+          schema: { type: string, format: date }
+        - in: query
+          name: organizationId
+          schema: { type: string, format: uuid }
+          description: Optional tenant filter (SUPER_ADMIN only)
+      responses:
+        "200":
+          description: Overview metrics payload
+
+  /analytics/requests:
+    get:
+      tags: [Analytics]
+      summary: Retrieve work request trend series and category breakdowns
+      responses:
+        "200":
+          description: Request analytics dataset
+
+  /analytics/tasks:
+    get:
+      tags: [Analytics]
+      summary: Retrieve task completion and overdue metrics
+      responses:
+        "200":
+          description: Task analytics dataset
+
+  /analytics/ai-usage:
+    get:
+      tags: [Analytics]
+      summary: Retrieve AI assistant token consumption, latency, and cost telemetry (ADMIN)
+      responses:
+        "200":
+          description: AI usage analytics
+
+  /analytics/export:
+    get:
+      tags: [Analytics]
+      summary: Export analytics report as downloadable CSV
+      responses:
+        "200":
+          description: CSV report attachment
+
+  /analytics/digest/schedule:
+    get:
+      tags: [Analytics]
+      summary: Get configured executive digest email schedule
+      responses:
+        "200":
+          description: Digest schedule settings
+    put:
+      tags: [Analytics]
+      summary: Update weekly executive digest cron schedule and recipients (ADMIN)
+      responses:
+        "200":
+          description: Saved digest schedule
+
+  /analytics/digest/send-test:
+    post:
+      tags: [Analytics]
+      summary: Send a test analytics digest email immediately (ADMIN)
+      responses:
+        "200":
+          description: Delivery result
+
+  /analytics/digest/deliveries:
+    get:
+      tags: [Analytics]
+      summary: List historical digest delivery logs (ADMIN)
+      responses:
+        "200":
+          description: Digest deliveries list
+
+  /search:
+    get:
+      tags: [Search]
+      summary: Global cross-module keyword search (requests, tasks, documents, people)
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Categorized search results scoped to the caller tenant
+
+  /announcements:
+    get:
+      tags: [Announcements]
+      summary: List published announcements visible to the user
+      responses:
+        "200":
+          description: Announcements list
+    post:
+      tags: [Announcements]
+      summary: Publish a new company or department announcement (MANAGER / ADMIN)
+      responses:
+        "201":
+          description: Created announcement
+
+  /announcements/unread:
+    get:
+      tags: [Announcements]
+      summary: Count and preview unread announcements for dashboard banner
+      responses:
+        "200":
+          description: Unread announcements
+
+  /announcements/departments:
+    get:
+      tags: [Announcements]
+      summary: List tenant departments available for targeting announcements
+      responses:
+        "200":
+          description: Departments array
+
+  /announcements/{id}:
+    get:
+      tags: [Announcements]
+      summary: Retrieve single announcement detail
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Announcement record
+    patch:
+      tags: [Announcements]
+      summary: Update an announcement (author or ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Updated announcement
+    delete:
+      tags: [Announcements]
+      summary: Delete an announcement (author or ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          $ref: "#/components/responses/MessageSuccess"
+
+  /announcements/{id}/read:
+    post:
+      tags: [Announcements]
+      summary: Mark an announcement as read by the caller
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          $ref: "#/components/responses/MessageSuccess"
+
+  /announcements/{id}/read-stats:
+    get:
+      tags: [Announcements]
+      summary: View acknowledgement statistics for an announcement
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Read count and user list
+
+  /directory:
+    get:
+      tags: [Directory]
+      summary: Search organization employee directory
+      responses:
+        "200":
+          description: Active tenant directory profiles
+
+  /directory/departments:
+    get:
+      tags: [Directory]
+      summary: List tenant departments with headcount
+      responses:
+        "200":
+          description: Departments summary
+
+  /directory/org:
+    get:
+      tags: [Directory]
+      summary: Retrieve hierarchical reporting tree for the tenant organization
+      responses:
+        "200":
+          description: Organization reporting tree
+
+  /directory/reports/{managerId}:
+    get:
+      tags: [Directory]
+      summary: List direct reports under a manager
+      parameters:
+        - in: path
+          name: managerId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Direct reports list
+
+  /directory/team/{userId}:
+    get:
+      tags: [Directory]
+      summary: Retrieve user team context and reporting peers
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Team structure
+
+  /assets:
+    get:
+      tags: [Assets]
+      summary: List organization IT assets (ADMIN)
+      responses:
+        "200":
+          description: Paginated assets inventory
+    post:
+      tags: [Assets]
+      summary: Register a new asset with tenant-unique serial number (ADMIN)
+      responses:
+        "201":
+          description: Created asset
+
+  /assets/my:
+    get:
+      tags: [Assets]
+      summary: List assets assigned to the authenticated user
+      responses:
+        "200":
+          description: Assigned user assets
+
+  /assets/{id}:
+    get:
+      tags: [Assets]
+      summary: Get asset details and assignment history
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Asset record
+    patch:
+      tags: [Assets]
+      summary: Partially update asset properties (ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Updated asset
+    put:
+      tags: [Assets]
+      summary: Replace asset details (ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Updated asset
+
+  /assets/{id}/assign:
+    post:
+      tags: [Assets]
+      summary: Assign an available asset to an employee (ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Assignment recorded
+
+  /assets/{id}/return:
+    post:
+      tags: [Assets]
+      summary: Return an assigned asset back to inventory (ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Return recorded
+
+  /assets/{id}/retire:
+    post:
+      tags: [Assets]
+      summary: Mark an asset as retired (ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Retired asset
+
+  /policies:
+    get:
+      tags: [Policies]
+      summary: List company policies requiring acknowledgement
+      responses:
+        "200":
+          description: Policies list
+    post:
+      tags: [Policies]
+      summary: Create a compliance policy document (ADMIN)
+      responses:
+        "201":
+          description: Created policy
+
+  /policies/my-status:
+    get:
+      tags: [Policies]
+      summary: Check caller acknowledgement compliance status
+      responses:
+        "200":
+          description: Pending and acknowledged policies
+
+  /policies/compliance/summary:
+    get:
+      tags: [Policies]
+      summary: View tenant-wide policy acknowledgement compliance rates (ADMIN)
+      responses:
+        "200":
+          description: Compliance summary
+
+  /policies/compliance/export:
+    get:
+      tags: [Policies]
+      summary: Export compliance audit report CSV (ADMIN)
+      responses:
+        "200":
+          description: CSV file download
+
+  /policies/{id}:
+    get:
+      tags: [Policies]
+      summary: View policy details
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Policy detail
+
+  /policies/{id}/versions:
+    post:
+      tags: [Policies]
+      summary: Publish a new version of an existing policy (ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "201":
+          description: Published new policy version
+
+  /policies/{id}/acknowledge:
+    post:
+      tags: [Policies]
+      summary: Acknowledge acceptance of current policy version
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Recorded acknowledgement
+
+  /leaves:
+    get:
+      tags: [Leaves]
+      summary: List leave requests scoped by caller permissions and tenant
+      responses:
+        "200":
+          description: Leave requests list
+    post:
+      tags: [Leaves]
+      summary: Submit a new leave request
+      responses:
+        "201":
+          description: Created leave request
+
+  /leaves/balance:
+    get:
+      tags: [Leaves]
+      summary: Fetch caller remaining PTO/leave balances
+      responses:
+        "200":
+          description: Leave balances by type
+
+  /leaves/holidays:
+    get:
+      tags: [Leaves]
+      summary: List tenant company holidays
+      responses:
+        "200":
+          description: Holidays array
+    post:
+      tags: [Leaves]
+      summary: Add a company holiday (ADMIN)
+      responses:
+        "201":
+          description: Created holiday
+
+  /leaves/holidays/{id}:
+    put:
+      tags: [Leaves]
+      summary: Update a company holiday (ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Updated holiday
+    delete:
+      tags: [Leaves]
+      summary: Delete a company holiday (ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          $ref: "#/components/responses/MessageSuccess"
+
+  /leaves/{id}:
+    get:
+      tags: [Leaves]
+      summary: Get single leave request detail
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Leave request
+
+  /leaves/{id}/approve:
+    post:
+      tags: [Leaves]
+      summary: Approve a pending leave request (MANAGER / ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Approved leave request
+
+  /leaves/{id}/reject:
+    post:
+      tags: [Leaves]
+      summary: Reject a pending leave request (MANAGER / ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Rejected leave request
+
+  /leaves/{id}/cancel:
+    post:
+      tags: [Leaves]
+      summary: Cancel caller own leave request
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Cancelled leave request
+
+  /calendar/events:
+    get:
+      tags: [Calendar]
+      summary: Retrieve unified calendar events across holidays, leaves, requests, and tasks
+      parameters:
+        - in: query
+          name: from
+          schema: { type: string, format: date }
+        - in: query
+          name: to
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Unified events array
+
+  /expenses:
+    get:
+      tags: [Expenses]
+      summary: List expense claims
+      responses:
+        "200":
+          description: Paginated expense claims
+    post:
+      tags: [Expenses]
+      summary: Create a draft expense claim
+      responses:
+        "201":
+          description: Created draft claim
+
+  /expenses/summary:
+    get:
+      tags: [Expenses]
+      summary: Get expense reimbursement summary counters
+      responses:
+        "200":
+          description: Summary metrics
+
+  /expenses/upload-receipt:
+    post:
+      tags: [Expenses]
+      summary: Upload a receipt image/PDF for an expense claim item
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "201":
+          description: Stored receipt URL metadata
+
+  /expenses/receipts/{filename}:
+    get:
+      tags: [Expenses]
+      summary: Serve an uploaded receipt file scoped to authorized claim users
+      parameters:
+        - in: path
+          name: filename
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Receipt file bytes
+
+  /expenses/{id}:
+    get:
+      tags: [Expenses]
+      summary: Get expense claim detail
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Expense claim
+    patch:
+      tags: [Expenses]
+      summary: Edit a draft expense claim
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Updated expense claim
+    delete:
+      tags: [Expenses]
+      summary: Delete a draft expense claim
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          $ref: "#/components/responses/MessageSuccess"
+
+  /expenses/{id}/items:
+    post:
+      tags: [Expenses]
+      summary: Add line item to an expense claim
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "201":
+          description: Added expense item
+
+  /expenses/{id}/items/{itemId}:
+    patch:
+      tags: [Expenses]
+      summary: Update an expense line item
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - in: path
+          name: itemId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Updated expense item
+    delete:
+      tags: [Expenses]
+      summary: Delete an expense line item
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - in: path
+          name: itemId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          $ref: "#/components/responses/MessageSuccess"
+
+  /expenses/{id}/submit:
+    post:
+      tags: [Expenses]
+      summary: Submit an expense claim into approval workflow
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Submitted claim
+
+  /expenses/{id}/pay:
+    post:
+      tags: [Expenses]
+      summary: Mark an approved expense claim as reimbursed with payment reference (ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Claim marked PAID
+
+  /surveys:
+    get:
+      tags: [Surveys]
+      summary: List surveys visible to caller
+      responses:
+        "200":
+          description: Surveys list
+    post:
+      tags: [Surveys]
+      summary: Create a survey template (ADMIN)
+      responses:
+        "201":
+          description: Created survey
+
+  /surveys/pending-csat:
+    get:
+      tags: [Surveys]
+      summary: Check pending CSAT prompts on recently completed requests
+      responses:
+        "200":
+          description: Pending CSAT surveys
+
+  /surveys/responses:
+    get:
+      tags: [Surveys]
+      summary: List submitted survey responses (ADMIN)
+      responses:
+        "200":
+          description: Survey responses list
+    post:
+      tags: [Surveys]
+      summary: Submit a survey or CSAT response
+      responses:
+        "201":
+          description: Recorded response
+
+  /surveys/results:
+    get:
+      tags: [Surveys]
+      summary: Aggregated survey and CSAT analytics (ADMIN)
+      responses:
+        "200":
+          description: Survey results metrics
+
+  /surveys/{id}:
+    get:
+      tags: [Surveys]
+      summary: Get single survey configuration
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Survey object
+    put:
+      tags: [Surveys]
+      summary: Replace survey definition (ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Updated survey
+
+  /surveys/{id}/toggle-active:
+    patch:
+      tags: [Surveys]
+      summary: Activate or deactivate a survey (ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Toggled survey state
+
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: List paginated user notifications
+      responses:
+        "200":
+          description: Paginated notifications list
+
+  /notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Get unread notification badge count
+      responses:
+        "200":
+          description: Unread count object
+
+  /notifications/read-all:
+    patch:
+      tags: [Notifications]
+      summary: Mark all user notifications read
+      responses:
+        "200":
+          $ref: "#/components/responses/MessageSuccess"
+
+  /notifications/{id}/read:
+    patch:
+      tags: [Notifications]
+      summary: Mark individual notification read
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Updated notification
+
+  /audit-logs:
+    get:
+      tags: [Audit Logs]
+      summary: Query immutable compliance audit log records (ADMIN / SUPER_ADMIN)
+      responses:
+        "200":
+          description: Paginated audit log entries
+
+  /audit-logs/export:
+    get:
+      tags: [Audit Logs]
+      summary: Export filtered audit logs as CSV (ADMIN / SUPER_ADMIN)
+      responses:
+        "200":
+          description: CSV export stream
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Short-lived JWT access token (~15m) signed with JWT_ACCESS_SECRET
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: refreshToken
+      description: Rotating httpOnly refresh token cookie scoped to /api/auth/refresh
+
+  parameters:
+    ResourceId:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+    StepId:
+      in: path
+      name: stepId
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    MessageSuccess:
+      description: Operation completed successfully
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message: { type: string }
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ForbiddenError:
+      description: Insufficient permissions or suspended organization
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFoundError:
+      description: Resource not found within accessible tenant scope
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    Role:
+      type: string
+      enum: [EMPLOYEE, MANAGER, ADMIN, SUPER_ADMIN]
+
+    Organization:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        isActive: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        email: { type: string, format: email }
+        role: { $ref: "#/components/schemas/Role" }
+        isActive: { type: boolean }
+        organizationId: { type: string, format: uuid, nullable: true }
+        departmentId: { type: string, format: uuid, nullable: true }
+        managerId: { type: string, format: uuid, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    AuthSessionResponse:
+      type: object
+      properties:
+        accessToken: { type: string }
+        user: { $ref: "#/components/schemas/User" }
+
+    CreateWorkRequestInput:
+      type: object
+      required: [title, description, category]
+      properties:
+        title: { type: string, minLength: 3 }
+        description: { type: string }
+        category: { type: string, enum: [IT, HR, FINANCE, FACILITIES, OTHER] }
+        priority: { type: string, enum: [LOW, MEDIUM, HIGH, URGENT] }
+        dueDate: { type: string, format: date-time, nullable: true }
+        submitImmediately: { type: boolean, default: false }
+
+    CreateTaskInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        description: { type: string }
+        requestId: { type: string, format: uuid, nullable: true }
+        assigneeId: { type: string, format: uuid, nullable: true }
+        priority: { type: string, enum: [LOW, MEDIUM, HIGH, URGENT] }
+        dueDate: { type: string, format: date-time, nullable: true }
+
+    ErrorResponse:
+      type: object
+      properties:
+        error: { type: string }
+        code: { type: string }
+        details: { type: object, additionalProperties: true }

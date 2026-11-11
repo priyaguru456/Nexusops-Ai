@@ -7,6 +7,7 @@ export const safeUserSelect = {
   email: true,
   role: true,
   isActive: true,
+  organizationId: true,
   departmentId: true,
   managerId: true,
   createdAt: true,
@@ -17,12 +18,21 @@ export const safeUserSelect = {
       name: true,
     },
   },
+  organization: {
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      isActive: true,
+    },
+  },
 } as const;
 
 export interface CreateUserData {
   name: string;
   email: string;
   passwordHash: string;
+  organizationId?: string | null;
   departmentId?: string | null;
   role?: Role;
 }
@@ -33,6 +43,7 @@ export interface FindUsersFilter {
   role?: Role;
   isActive?: boolean;
   search?: string;
+  organizationId?: string;
 }
 
 export class UserRepository {
@@ -48,6 +59,14 @@ export class UserRepository {
       where: { id },
       include: {
         department: true,
+        organization: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            isActive: true,
+          },
+        },
       },
     });
   }
@@ -57,6 +76,14 @@ export class UserRepository {
       where: { email: email.toLowerCase() },
       include: {
         department: true,
+        organization: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            isActive: true,
+          },
+        },
       },
     });
   }
@@ -67,6 +94,7 @@ export class UserRepository {
         name: data.name,
         email: data.email.toLowerCase(),
         passwordHash: data.passwordHash,
+        organizationId: data.organizationId ?? null,
         departmentId: data.departmentId ?? null,
         role: data.role ?? Role.EMPLOYEE,
         isActive: true,
@@ -77,6 +105,10 @@ export class UserRepository {
 
   async findAll(filter: FindUsersFilter = {}) {
     const where: Prisma.UserWhereInput = {};
+
+    if (filter.organizationId) {
+      where.organizationId = filter.organizationId;
+    }
 
     if (filter.role) {
       where.role = filter.role;

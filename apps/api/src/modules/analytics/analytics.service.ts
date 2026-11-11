@@ -2,6 +2,7 @@ import { Prisma, Role } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { AppError } from "../../lib/errors";
 import { env } from "../../config/env";
+import { isAdminRole } from "../../lib/tenant";
 import { analyticsScope } from "./analytics.scope";
 import { AuthenticatedUser } from "../../types/express";
 
@@ -143,7 +144,7 @@ export const analyticsService = {
 
     // 6. AI Summary: Admin sees full overview; Employee sees own question count/feedback; Manager gets null
     let aiSummary = null;
-    if (user.role === Role.ADMIN || user.role === Role.EMPLOYEE) {
+    if (isAdminRole(user) || user.role === Role.EMPLOYEE) {
       const csScope = analyticsScope.forChatSessions(user, "cs");
       const [aiRow]: any[] = await prisma.$queryRaw`
         SELECT
@@ -464,9 +465,11 @@ export const analyticsService = {
    * - Manager and Employee receive 403 Forbidden
    */
   async getAIUsageAnalytics(user: AuthenticatedUser, fromDate: Date, toDate: Date) {
-    if (user.role !== Role.ADMIN) {
+    if (!isAdminRole(user)) {
       throw AppError.forbidden("Admin access required for AI usage analytics");
     }
+
+    const csScope = analyticsScope.forChatSessions(user, "cs");
 
     // 1. Questions per day using generate_series
     const questionsPerDay: any[] = await prisma.$queryRaw`
@@ -484,6 +487,11 @@ export const analyticsService = {
       LEFT JOIN "ChatMessage" cm 
         ON date_trunc('day', cm."createdAt") = days.day
         AND cm.role = 'USER'
+        AND EXISTS (
+          SELECT 1 FROM "ChatSession" cs
+          WHERE cs.id = cm."sessionId"
+            AND ${csScope}
+        )
       GROUP BY days.day
       ORDER BY days.day ASC;
     `;
@@ -501,8 +509,10 @@ export const analyticsService = {
         COALESCE(SUM(cm."outputTokens"), 0)::bigint AS "totalOutputTokens",
         COALESCE(SUM(cm."tokensUsed"), 0)::bigint AS "totalTokensUsed"
       FROM "ChatMessage" cm
+      JOIN "ChatSession" cs ON cs.id = cm."sessionId"
       WHERE cm."createdAt" >= ${fromDate}
-        AND cm."createdAt" <= ${toDate};
+        AND cm."createdAt" <= ${toDate}
+        AND ${csScope};
     `;
 
     // 3. Most-used documents: aggregate from citations JSONB using jsonb_array_elements
@@ -511,7 +521,8 @@ export const analyticsService = {
         elem->>'documentId' AS "documentId",
         COALESCE(d.title, elem->>'documentTitle', 'Untitled Document') AS "title",
         COUNT(*)::int AS "citationCount"
-      FROM "ChatMessage" cm,
+      FROM "ChatMessage" cm
+      JOIN "ChatSession" cs ON cs.id = cm."sessionId",
       LATERAL jsonb_array_elements(
         CASE 
           WHEN cm.citations IS NOT NULL AND jsonb_typeof(cm.citations::jsonb) = 'array'
@@ -523,6 +534,7 @@ export const analyticsService = {
       WHERE cm.role = 'ASSISTANT'
         AND cm."createdAt" >= ${fromDate}
         AND cm."createdAt" <= ${toDate}
+        AND ${csScope}
       GROUP BY elem->>'documentId', d.title, elem->>'documentTitle'
       ORDER BY "citationCount" DESC
       LIMIT 10;
@@ -753,9 +765,11 @@ export const analyticsService = {
       }
 
       case "ai-usage": {
-        if (user.role !== Role.ADMIN) {
+        if (!isAdminRole(user)) {
           throw AppError.forbidden("Admin access required for AI usage export");
         }
+
+        const csScope = analyticsScope.forChatSessions(user, "cs");
 
         const rows: any[] = await prisma.$queryRaw`
           SELECT
@@ -769,8 +783,10 @@ export const analyticsService = {
             cm.feedback,
             to_char(cm."createdAt", 'YYYY-MM-DD HH24:MI:SS') AS "createdAt"
           FROM "ChatMessage" cm
+          JOIN "ChatSession" cs ON cs.id = cm."sessionId"
           WHERE cm."createdAt" >= ${fromDate}
             AND cm."createdAt" <= ${toDate}
+            AND ${csScope}
           ORDER BY cm."createdAt" DESC;
         `;
 

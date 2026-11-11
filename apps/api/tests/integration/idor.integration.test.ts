@@ -11,10 +11,10 @@ import {
 } from "../helpers/factories";
 
 describe("Integration: IDOR Protection across all :id routes (Real Test DB)", () => {
-  let userA: { id: string; email: string };
+  let userA: { id: string; email: string; organizationId: string | null };
   let tokenA: string;
 
-  let userB: { id: string; email: string };
+  let userB: { id: string; email: string; organizationId: string | null };
   let tokenB: string;
 
   let reqA: { id: string };
@@ -41,10 +41,11 @@ describe("Integration: IDOR Protection across all :id routes (Real Test DB)", ()
 
     taskA = await prisma.task.create({
       data: {
+        organizationId: userA.organizationId!,
         title: "User A Confidential Task",
         status: TaskStatus.TODO,
         priority: Priority.HIGH,
-        creatorId: userA.id,
+        assignedById: userA.id,
         assigneeId: userA.id,
       },
     });
@@ -56,6 +57,7 @@ describe("Integration: IDOR Protection across all :id routes (Real Test DB)", ()
 
     sessionA = await prisma.chatSession.create({
       data: {
+        organizationId: userA.organizationId!,
         userId: userA.id,
         title: "User A Private Chat",
       },
@@ -63,6 +65,7 @@ describe("Integration: IDOR Protection across all :id routes (Real Test DB)", ()
 
     notifA = await prisma.notification.create({
       data: {
+        organizationId: userA.organizationId!,
         userId: userA.id,
         title: "User A Private Notification",
         message: "Secret update",
@@ -73,10 +76,11 @@ describe("Integration: IDOR Protection across all :id routes (Real Test DB)", ()
     // Create a comment on Request A
     await prisma.comment.create({
       data: {
+        organizationId: userA.organizationId!,
         entityType: "REQUEST",
         entityId: reqA.id,
-        authorId: userA.id,
-        content: "User A private comment",
+        userId: userA.id,
+        body: "User A private comment",
       },
     });
   });

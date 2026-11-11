@@ -60,6 +60,7 @@ export async function processDocument(documentId: string): Promise<void> {
     await prisma.documentChunk.createMany({
       data: chunks.map((chunk) => ({
         documentId: chunk.documentId,
+        organizationId: doc.organizationId,
         chunkIndex: chunk.chunkIndex,
         pageNumber: chunk.pageNumber,
         content: chunk.content,

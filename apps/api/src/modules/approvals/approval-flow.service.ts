@@ -2,6 +2,7 @@ import { RequestCategory, Role, Prisma } from "@prisma/client";
 import { approvalRepository } from "./approval.repository";
 import { prisma } from "../../lib/prisma";
 import { AppError } from "../../lib/errors";
+import { assertSameTenant, resolveTenantId, tenantWhere } from "../../lib/tenant";
 import { auditService } from "../audit/audit.service";
 import type { AuthenticatedUser } from "../../types/express";
 import type {
@@ -35,12 +36,14 @@ export class ApprovalFlowService {
     minAmount: number,
     maxAmount: number | null | undefined,
     excludeFlowId?: string,
-    tx?: Prisma.TransactionClient
+    tx?: Prisma.TransactionClient,
+    organizationId?: string
   ): Promise<void> {
     const existingActiveFlows = await approvalRepository.findActiveFlowsByCategory(
       category,
       excludeFlowId,
-      tx
+      tx,
+      organizationId
     );
 
     for (const flow of existingActiveFlows) {
@@ -69,7 +72,8 @@ export class ApprovalFlowService {
    */
   async validateSteps(
     steps: ApprovalFlowStepInput[],
-    tx?: Prisma.TransactionClient
+    tx?: Prisma.TransactionClient,
+    organizationId?: string
   ): Promise<void> {
     if (!steps || steps.length === 0) {
       throw AppError.badRequest("An approval flow must have at least one step");
@@ -92,10 +96,10 @@ export class ApprovalFlowService {
       if (step.approverId) {
         const user = await client.user.findUnique({
           where: { id: step.approverId },
-          select: { id: true, isActive: true, role: true },
+          select: { id: true, isActive: true, role: true, organizationId: true },
         });
 
-        if (!user) {
+        if (!user || (organizationId && user.organizationId !== organizationId)) {
           throw AppError.badRequest(
             `Approver user with ID "${step.approverId}" not found for step ${step.stepOrder}`
           );
@@ -110,27 +114,37 @@ export class ApprovalFlowService {
     }
   }
 
-  async getFlows(filters: FlowQueryParams) {
-    return approvalRepository.listFlows(filters);
+  async getFlows(filters: FlowQueryParams, user?: AuthenticatedUser) {
+    return approvalRepository.listFlows({
+      ...filters,
+      ...(user ? tenantWhere(user) : {}),
+    });
   }
 
-  async getFlowById(id: string) {
+  async getFlowById(id: string, user?: AuthenticatedUser) {
     const flow = await approvalRepository.findFlowById(id);
     if (!flow) {
       throw AppError.notFound(`Approval flow not found with ID ${id}`);
+    }
+    if (user) {
+      assertSameTenant(flow.organizationId, user, `Approval flow not found with ID ${id}`);
     }
     return flow;
   }
 
   async createFlow(data: CreateApprovalFlowInput, user: AuthenticatedUser) {
-    await this.validateSteps(data.steps);
+    const organizationId = resolveTenantId(user);
+    await this.validateSteps(data.steps, undefined, organizationId);
 
     const isActive = data.isActive ?? true;
     if (isActive) {
       await this.assertNoRangeOverlap(
         data.category,
         data.minAmount,
-        data.maxAmount
+        data.maxAmount,
+        undefined,
+        undefined,
+        organizationId
       );
     }
 
@@ -140,11 +154,13 @@ export class ApprovalFlowService {
       minAmount: data.minAmount,
       maxAmount: data.maxAmount,
       isActive,
+      organizationId,
       steps: data.steps,
     });
 
     await auditService.log({
       actorId: user.id,
+      organizationId,
       action: "APPROVAL_FLOW_CREATED",
       entityType: "ApprovalFlow",
       entityId: created.id,
@@ -170,9 +186,10 @@ export class ApprovalFlowService {
     if (!existing) {
       throw AppError.notFound(`Approval flow not found with ID ${id}`);
     }
+    assertSameTenant(existing.organizationId, user, `Approval flow not found with ID ${id}`);
 
     if (data.steps) {
-      await this.validateSteps(data.steps);
+      await this.validateSteps(data.steps, undefined, existing.organizationId);
     }
 
     const targetCategory = data.category ?? existing.category;
@@ -194,7 +211,9 @@ export class ApprovalFlowService {
         targetCategory,
         targetMin,
         targetMax,
-        id
+        id,
+        undefined,
+        existing.organizationId
       );
     }
 
@@ -209,6 +228,7 @@ export class ApprovalFlowService {
 
     await auditService.log({
       actorId: user.id,
+      organizationId: existing.organizationId,
       action: "APPROVAL_FLOW_UPDATED",
       entityType: "ApprovalFlow",
       entityId: id,
@@ -225,6 +245,7 @@ export class ApprovalFlowService {
     if (!existing) {
       throw AppError.notFound(`Approval flow not found with ID ${id}`);
     }
+    assertSameTenant(existing.organizationId, user, `Approval flow not found with ID ${id}`);
 
     const inUseCount = await approvalRepository.countRequestsUsingFlow(id);
     if (inUseCount > 0) {
@@ -237,6 +258,7 @@ export class ApprovalFlowService {
 
     await auditService.log({
       actorId: user.id,
+      organizationId: existing.organizationId,
       action: "APPROVAL_FLOW_DELETED",
       entityType: "ApprovalFlow",
       entityId: id,

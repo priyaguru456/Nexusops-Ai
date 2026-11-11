@@ -5,7 +5,7 @@ import { AppError } from "../../lib/errors";
 export class UserController {
   async getUsers(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const result = await userService.getUsers(req.query);
+      const result = await userService.getUsers(req.query, req.user);
       res.status(200).json(result);
     } catch (error) {
       next(error);
@@ -21,7 +21,8 @@ export class UserController {
       const updatedUser = await userService.updateRole(
         req.user.id,
         targetUserId,
-        req.body.role
+        req.body.role,
+        req.user
       );
       res.status(200).json({ user: updatedUser });
     } catch (error) {
@@ -38,7 +39,8 @@ export class UserController {
       const updatedUser = await userService.updateStatus(
         req.user.id,
         targetUserId,
-        req.body.isActive
+        req.body.isActive,
+        req.user
       );
       res.status(200).json({ user: updatedUser });
     } catch (error) {

@@ -4,44 +4,59 @@ import { canTransitionRequest } from "./request.state-machine";
 import { auditService } from "../audit/audit.service";
 import { approvalService } from "../approvals/approval.service";
 import { AppError } from "../../lib/errors";
+import {
+  assertSameTenant,
+  isAdminRole,
+  resolveTenantId,
+  tenantWhere,
+} from "../../lib/tenant";
 import type { AuthenticatedUser } from "../../types/express";
 
 export class RequestService {
   /**
    * Builds the visibility query based on RBAC rules:
-   * - Employees see only their own requests
-   * - Managers see own requests + all requests from users in their department
-   * - Admins see all requests
+   * - Employees see only their own requests within their organization
+   * - Managers see own requests + all requests from users in their department within their organization
+   * - Admins see all requests within their organization (Super Admins across organizations)
    */
   private buildVisibilityFilter(user: AuthenticatedUser): Prisma.WorkRequestWhereInput {
-    if (user.role === Role.ADMIN) {
-      return {};
+    const scope = tenantWhere(user);
+
+    if (isAdminRole(user)) {
+      return scope;
     }
 
     if (user.role === Role.MANAGER) {
       if (user.departmentId) {
         return {
+          ...scope,
           OR: [
             { requesterId: user.id },
             { requester: { departmentId: user.departmentId } },
           ],
         };
       }
-      return { requesterId: user.id };
+      return { ...scope, requesterId: user.id };
     }
 
     // Role.EMPLOYEE
-    return { requesterId: user.id };
+    return { ...scope, requesterId: user.id };
   }
 
   /**
    * Verifies if a user has permission to read a specific request.
    */
   private assertCanViewRequest(
-    request: { requesterId: string; requester: { departmentId: string | null } },
+    request: {
+      organizationId?: string;
+      requesterId: string;
+      requester: { departmentId: string | null };
+    },
     user: AuthenticatedUser
   ): void {
-    if (user.role === Role.ADMIN) return;
+    assertSameTenant(request.organizationId, user, "Request not found");
+
+    if (isAdminRole(user)) return;
 
     if (user.role === Role.MANAGER) {
       const isOwn = request.requesterId === user.id;
@@ -60,15 +75,18 @@ export class RequestService {
 
   async createRequest(
     user: AuthenticatedUser,
-    data: Omit<CreateRequestData, "requesterId">
+    data: Omit<CreateRequestData, "requesterId" | "organizationId">
   ) {
+    const organizationId = resolveTenantId(user);
     const created = await requestRepository.create({
       ...data,
       requesterId: user.id,
+      organizationId,
     });
 
     await auditService.log({
       actorId: user.id,
+      organizationId,
       action: "REQUEST_CREATED",
       entityType: "WorkRequest",
       entityId: created.id,
@@ -117,6 +135,8 @@ export class RequestService {
       throw AppError.notFound("Request not found");
     }
 
+    assertSameTenant(request.organizationId, user, "Request not found");
+
     if (request.requesterId !== user.id) {
       throw AppError.forbidden("Only the requester can modify this request");
     }
@@ -131,6 +151,7 @@ export class RequestService {
 
     await auditService.log({
       actorId: user.id,
+      organizationId: request.organizationId,
       action: "REQUEST_UPDATED",
       entityType: "WorkRequest",
       entityId: id,
@@ -149,7 +170,9 @@ export class RequestService {
       throw AppError.notFound("Request not found");
     }
 
-    if (request.requesterId !== user.id && user.role !== Role.ADMIN) {
+    assertSameTenant(request.organizationId, user, "Request not found");
+
+    if (request.requesterId !== user.id && !isAdminRole(user)) {
       throw AppError.forbidden("Only the requester can submit this request");
     }
 
@@ -168,10 +191,12 @@ export class RequestService {
       amount: request.amount,
       title: request.title,
       requesterId: request.requesterId,
+      organizationId: request.organizationId,
     });
 
     await auditService.log({
       actorId: user.id,
+      organizationId: request.organizationId,
       action: "REQUEST_SUBMITTED",
       entityType: "WorkRequest",
       entityId: id,
@@ -191,12 +216,14 @@ export class RequestService {
       throw AppError.notFound("Request not found");
     }
 
+    assertSameTenant(request.organizationId, user, "Request not found");
+
     // Requester, manager of department, or admin can cancel
     const isOwner = request.requesterId === user.id;
     const isManager =
       user.role === Role.MANAGER &&
       Boolean(user.departmentId && request.requester.departmentId === user.departmentId);
-    const isAdmin = user.role === Role.ADMIN;
+    const isAdmin = isAdminRole(user);
 
     if (!isOwner && !isManager && !isAdmin) {
       throw AppError.forbidden("You do not have permission to cancel this request");
@@ -212,6 +239,7 @@ export class RequestService {
 
     await auditService.log({
       actorId: user.id,
+      organizationId: request.organizationId,
       action: "REQUEST_CANCELLED",
       entityType: "WorkRequest",
       entityId: id,
@@ -236,6 +264,8 @@ export class RequestService {
       throw AppError.notFound("Request not found");
     }
 
+    assertSameTenant(request.organizationId, user, "Request not found");
+
     // Role check for status transitions (e.g. approval, in review, progress, complete)
     if (user.role === Role.EMPLOYEE && targetStatus !== RequestStatus.CANCELLED) {
       throw AppError.forbidden("Employees cannot transition request lifecycle status");
@@ -252,6 +282,7 @@ export class RequestService {
 
     await auditService.log({
       actorId: user.id,
+      organizationId: request.organizationId,
       action: "REQUEST_STATUS_UPDATED",
       entityType: "WorkRequest",
       entityId: id,
@@ -276,8 +307,10 @@ export class RequestService {
       throw AppError.notFound("Request not found");
     }
 
+    assertSameTenant(request.organizationId, user, "Request not found");
+
     const isOwner = request.requesterId === user.id;
-    const isAdmin = user.role === Role.ADMIN;
+    const isAdmin = isAdminRole(user);
     if (!isOwner && !isAdmin) {
       throw AppError.forbidden("You do not have permission to attach files to this request");
     }
@@ -289,6 +322,7 @@ export class RequestService {
 
     await auditService.log({
       actorId: user.id,
+      organizationId: request.organizationId,
       action: "REQUEST_ATTACHMENT_ADDED",
       entityType: "WorkRequest",
       entityId: id,

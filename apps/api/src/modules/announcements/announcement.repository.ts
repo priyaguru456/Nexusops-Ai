@@ -1,8 +1,10 @@
 import { prisma } from "../../lib/prisma";
+import { DEFAULT_ORGANIZATION_ID, isAdminRole } from "../../lib/tenant";
 import { AnnouncementPriority, Prisma } from "@prisma/client";
 import type { AnnouncementQueryInput } from "./announcement.schema";
 
 export interface CreateAnnouncementData {
+  organizationId?: string;
   title: string;
   content: string;
   priority?: AnnouncementPriority;
@@ -26,9 +28,11 @@ export class AnnouncementRepository {
     userId: string,
     userDepartmentId: string | null,
     userRole: string,
-    query: AnnouncementQueryInput
+    query: AnnouncementQueryInput,
+    organizationId?: string
   ) {
     const now = new Date();
+    const adminUser = isAdminRole(userRole);
 
     const andConditions: Prisma.AnnouncementWhereInput[] = [
       // Active not expired condition
@@ -37,10 +41,14 @@ export class AnnouncementRepository {
       },
     ];
 
+    if (organizationId) {
+      andConditions.push({ organizationId });
+    }
+
     // Department Visibility Rule:
     // Non-admins can ONLY see company-wide announcements (targetDepartmentId == null)
     // OR announcements targeted specifically to their department.
-    if (userRole !== "ADMIN") {
+    if (!adminUser) {
       andConditions.push({
         OR: [
           { targetDepartmentId: null },
@@ -125,7 +133,8 @@ export class AnnouncementRepository {
             {
               OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
             },
-            ...(userRole !== "ADMIN"
+            ...(organizationId ? [{ organizationId }] : []),
+            ...(!adminUser
               ? [
                   {
                     OR: [
@@ -196,6 +205,7 @@ export class AnnouncementRepository {
   async create(data: CreateAnnouncementData) {
     return prisma.announcement.create({
       data: {
+        organizationId: data.organizationId ?? DEFAULT_ORGANIZATION_ID,
         title: data.title,
         content: data.content,
         priority: data.priority ?? AnnouncementPriority.NORMAL,
@@ -280,7 +290,11 @@ export class AnnouncementRepository {
     });
   }
 
-  async getReadStats(announcementId: string, targetDepartmentId: string | null) {
+  async getReadStats(
+    announcementId: string,
+    targetDepartmentId: string | null,
+    organizationId?: string
+  ) {
     const [readCount, totalTargetUsers, reads] = await Promise.all([
       prisma.announcementRead.count({
         where: { announcementId },
@@ -288,6 +302,7 @@ export class AnnouncementRepository {
       prisma.user.count({
         where: {
           isActive: true,
+          ...(organizationId ? { organizationId } : {}),
           ...(targetDepartmentId ? { departmentId: targetDepartmentId } : {}),
         },
       }),
@@ -337,7 +352,8 @@ export class AnnouncementRepository {
     userId: string,
     userDepartmentId: string | null,
     userRole: string,
-    limit = 3
+    limit = 3,
+    organizationId?: string
   ) {
     const now = new Date();
 
@@ -345,6 +361,7 @@ export class AnnouncementRepository {
       {
         OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
       },
+      ...(organizationId ? [{ organizationId }] : []),
       {
         reads: {
           none: {
@@ -354,7 +371,7 @@ export class AnnouncementRepository {
       },
     ];
 
-    if (userRole !== "ADMIN") {
+    if (!isAdminRole(userRole)) {
       andConditions.push({
         OR: [
           { targetDepartmentId: null },
@@ -386,19 +403,27 @@ export class AnnouncementRepository {
     });
   }
 
-  async countTargetUsers(targetDepartmentId: string | null): Promise<number> {
+  async countTargetUsers(
+    targetDepartmentId: string | null,
+    organizationId?: string
+  ): Promise<number> {
     return prisma.user.count({
       where: {
         isActive: true,
+        ...(organizationId ? { organizationId } : {}),
         ...(targetDepartmentId ? { departmentId: targetDepartmentId } : {}),
       },
     });
   }
 
-  async getTargetUserIds(targetDepartmentId: string | null): Promise<string[]> {
+  async getTargetUserIds(
+    targetDepartmentId: string | null,
+    organizationId?: string
+  ): Promise<string[]> {
     const users = await prisma.user.findMany({
       where: {
         isActive: true,
+        ...(organizationId ? { organizationId } : {}),
         ...(targetDepartmentId ? { departmentId: targetDepartmentId } : {}),
       },
       select: { id: true },
@@ -406,8 +431,9 @@ export class AnnouncementRepository {
     return users.map((u) => u.id);
   }
 
-  async getDepartments(): Promise<{ id: string; name: string }[]> {
+  async getDepartments(organizationId?: string): Promise<{ id: string; name: string }[]> {
     return prisma.department.findMany({
+      where: organizationId ? { organizationId } : undefined,
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     });

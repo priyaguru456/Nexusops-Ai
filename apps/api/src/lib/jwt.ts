@@ -8,6 +8,7 @@ export interface AccessTokenPayload {
   sub: string;
   email: string;
   role: Role;
+  organizationId?: string | null;
 }
 
 export interface RefreshTokenPayload {

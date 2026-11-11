@@ -7,6 +7,7 @@ export const safeDirectorySelect = {
   email: true,
   role: true,
   isActive: true,
+  organizationId: true,
   departmentId: true,
   managerId: true,
   createdAt: true,
@@ -37,6 +38,7 @@ export interface DirectoryFilter {
   search?: string;
   departmentId?: string;
   role?: Role;
+  organizationId?: string;
 }
 
 export interface DirectoryUserDTO {
@@ -45,6 +47,7 @@ export interface DirectoryUserDTO {
   email: string;
   role: Role;
   isActive: boolean;
+  organizationId?: string | null;
   departmentId: string | null;
   department: {
     id: string;
@@ -73,6 +76,10 @@ export class DirectoryRepository {
       isActive: true,
     };
 
+    if (filter.organizationId) {
+      where.organizationId = filter.organizationId;
+    }
+
     if (filter.departmentId) {
       where.departmentId = filter.departmentId;
     }
@@ -90,7 +97,7 @@ export class DirectoryRepository {
       ];
 
       const upper = s.toUpperCase();
-      if (upper === "ADMIN" || upper === "MANAGER" || upper === "EMPLOYEE") {
+      if (upper === "ADMIN" || upper === "MANAGER" || upper === "EMPLOYEE" || upper === "SUPER_ADMIN") {
         orConditions.push({ role: upper as Role });
       }
 
@@ -135,8 +142,11 @@ export class DirectoryRepository {
     };
   }
 
-  async findDepartments(): Promise<Array<{ id: string; name: string; userCount: number }>> {
+  async findDepartments(
+    organizationId?: string
+  ): Promise<Array<{ id: string; name: string; userCount: number }>> {
     const departments = await prisma.department.findMany({
+      where: organizationId ? { organizationId } : undefined,
       orderBy: { name: "asc" },
       select: {
         id: true,
@@ -158,10 +168,17 @@ export class DirectoryRepository {
     }));
   }
 
-  async findOrgRoots(departmentId?: string): Promise<DirectoryUserDTO[]> {
+  async findOrgRoots(
+    departmentId?: string,
+    organizationId?: string
+  ): Promise<DirectoryUserDTO[]> {
     const where: Prisma.UserWhereInput = {
       isActive: true,
     };
+
+    if (organizationId) {
+      where.organizationId = organizationId;
+    }
 
     if (departmentId) {
       where.departmentId = departmentId;
@@ -196,11 +213,15 @@ export class DirectoryRepository {
     }));
   }
 
-  async findDirectReports(managerId: string): Promise<DirectoryUserDTO[]> {
+  async findDirectReports(
+    managerId: string,
+    organizationId?: string
+  ): Promise<DirectoryUserDTO[]> {
     const rawReports = await prisma.user.findMany({
       where: {
         managerId,
         isActive: true,
+        ...(organizationId ? { organizationId } : {}),
       },
       orderBy: [{ name: "asc" }, { id: "asc" }],
       select: safeDirectorySelect,
@@ -221,7 +242,10 @@ export class DirectoryRepository {
     }));
   }
 
-  async findUserTeam(userId: string): Promise<{
+  async findUserTeam(
+    userId: string,
+    organizationId?: string
+  ): Promise<{
     user: DirectoryUserDTO;
     manager: DirectoryUserDTO | null;
     peers: DirectoryUserDTO[];
@@ -232,7 +256,7 @@ export class DirectoryRepository {
       select: safeDirectorySelect,
     });
 
-    if (!rawUser) {
+    if (!rawUser || (organizationId && rawUser.organizationId !== organizationId)) {
       return null;
     }
 

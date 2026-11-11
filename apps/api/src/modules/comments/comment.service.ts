@@ -2,37 +2,47 @@ import { commentRepository, type CreateCommentData } from "./comment.repository"
 import { requestService } from "../requests/request.service";
 import { taskService } from "../tasks/task.service";
 import { auditService } from "../audit/audit.service";
+import { resolveTenantId, tenantWhere } from "../../lib/tenant";
 import type { AuthenticatedUser } from "../../types/express";
 
 export class CommentService {
   /**
-   * Asserts the user has visibility permissions on the target entity.
+   * Asserts the user has visibility permissions on the target entity and returns its organizationId.
    */
   private async assertCanAccessEntity(
     entityType: string,
     entityId: string,
     user: AuthenticatedUser
-  ): Promise<void> {
+  ): Promise<string> {
     if (entityType === "request") {
-      await requestService.getRequestById(entityId, user);
+      const req = await requestService.getRequestById(entityId, user);
+      return (req as { organizationId?: string }).organizationId ?? resolveTenantId(user);
     } else if (entityType === "task") {
-      await taskService.getTaskById(entityId, user);
+      const task = await taskService.getTaskById(entityId, user);
+      return (task as { organizationId?: string }).organizationId ?? resolveTenantId(user);
     }
+    return resolveTenantId(user);
   }
 
   async createComment(
     user: AuthenticatedUser,
-    data: Omit<CreateCommentData, "userId">
+    data: Omit<CreateCommentData, "userId" | "organizationId">
   ) {
-    await this.assertCanAccessEntity(data.entityType, data.entityId, user);
+    const organizationId = await this.assertCanAccessEntity(
+      data.entityType,
+      data.entityId,
+      user
+    );
 
     const comment = await commentRepository.create({
       ...data,
       userId: user.id,
+      organizationId,
     });
 
     await auditService.log({
       actorId: user.id,
+      organizationId,
       action: "COMMENT_CREATED",
       entityType: "Comment",
       entityId: comment.id,
@@ -52,7 +62,11 @@ export class CommentService {
     entityId: string
   ) {
     await this.assertCanAccessEntity(entityType, entityId, user);
-    return commentRepository.findByEntity(entityType, entityId);
+    return commentRepository.findByEntity(
+      entityType,
+      entityId,
+      tenantWhere(user).organizationId
+    );
   }
 }
 

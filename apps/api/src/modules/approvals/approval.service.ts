@@ -12,6 +12,12 @@ import type { ApprovalEntityDetails } from "./handlers/approval-handler.interfac
 import { auditService } from "../audit/audit.service";
 import { notificationService } from "../notifications/notification.service";
 import { AppError } from "../../lib/errors";
+import {
+  assertSameTenant,
+  DEFAULT_ORGANIZATION_ID,
+  isAdminRole,
+  tenantWhere,
+} from "../../lib/tenant";
 import type { AuthenticatedUser } from "../../types/express";
 
 export class ApprovalService {
@@ -27,9 +33,26 @@ export class ApprovalService {
       amount: WorkRequest["amount"];
       title: string;
       requesterId: string;
+      organizationId?: string;
     },
     tx?: Prisma.TransactionClient
   ) {
+    const client = tx || prisma;
+    let organizationId = request.organizationId;
+    const requesterRecord = !organizationId
+      ? await client.user.findUnique({
+          where: { id: request.requesterId },
+          select: { departmentId: true, managerId: true, organizationId: true },
+        })
+      : await client.user.findUnique({
+          where: { id: request.requesterId },
+          select: { departmentId: true, managerId: true },
+        });
+    organizationId =
+      organizationId ??
+      (requesterRecord as { organizationId?: string | null } | null)?.organizationId ??
+      DEFAULT_ORGANIZATION_ID;
+
     const amountVal =
       request.amount !== null && request.amount !== undefined
         ? Number(request.amount)
@@ -37,7 +60,8 @@ export class ApprovalService {
     const flow = await approvalRepository.findMatchingFlow(
       request.category,
       amountVal,
-      tx
+      tx,
+      organizationId
     );
 
     let stepsToCreate: Array<{
@@ -59,8 +83,6 @@ export class ApprovalService {
       stepsToCreate = [{ stepOrder: 1, approverRole: Role.MANAGER, approverId: null }];
     }
 
-    const client = tx || prisma;
-
     // Track which flow was matched for this request (enables in-use checks)
     if (matchedFlowId) {
       await client.workRequest.update({
@@ -74,6 +96,7 @@ export class ApprovalService {
         entityType: "REQUEST",
         entityId: requestId,
         requestId,
+        organizationId,
         steps: stepsToCreate,
       },
       undefined,
@@ -89,17 +112,13 @@ export class ApprovalService {
         approverIds = [firstStep.approverId];
       }
     } else {
-      const requester = await client.user.findUnique({
-        where: { id: request.requesterId },
-        select: { departmentId: true, managerId: true },
-      });
-
       const eligibleApprovers = await client.user.findMany({
         where: {
           role: firstStep.approverRole,
           isActive: true,
-          ...(requester?.departmentId
-            ? { departmentId: requester.departmentId }
+          organizationId,
+          ...(requesterRecord?.departmentId
+            ? { departmentId: requesterRecord.departmentId }
             : {}),
         },
         select: { id: true },
@@ -132,6 +151,7 @@ export class ApprovalService {
       entityId: string;
       title: string;
       requesterId: string;
+      organizationId?: string;
       steps: Array<{
         stepOrder: number;
         approverRole: Role;
@@ -145,11 +165,19 @@ export class ApprovalService {
     const { entityType, entityId, title, requesterId, steps, requestId, link } = params;
     const client = tx || prisma;
 
+    const requester = await client.user.findUnique({
+      where: { id: requesterId },
+      select: { departmentId: true, managerId: true, organizationId: true },
+    });
+    const organizationId =
+      params.organizationId ?? requester?.organizationId ?? DEFAULT_ORGANIZATION_ID;
+
     await approvalRepository.createApprovalSteps(
       {
         entityType,
         entityId,
         requestId: requestId ?? (entityType === "REQUEST" ? entityId : null),
+        organizationId,
         steps,
       },
       undefined,
@@ -166,15 +194,11 @@ export class ApprovalService {
         approverIds = [firstStep.approverId];
       }
     } else {
-      const requester = await client.user.findUnique({
-        where: { id: requesterId },
-        select: { departmentId: true, managerId: true },
-      });
-
       const eligibleApprovers = await client.user.findMany({
         where: {
           role: firstStep.approverRole,
           isActive: true,
+          organizationId,
           ...(requester?.departmentId
             ? { departmentId: requester.departmentId }
             : {}),
@@ -225,8 +249,8 @@ export class ApprovalService {
       return false;
     }
 
-    // Admins can approve any step
-    if (user.role === Role.ADMIN) {
+    // Admins can approve any step within their organization
+    if (isAdminRole(user)) {
       return true;
     }
 
@@ -257,7 +281,10 @@ export class ApprovalService {
    * Returns steps assigned to my role/me that are currently active in the sequence.
    */
   async getPendingApprovals(user: AuthenticatedUser) {
-    const candidates = await approvalRepository.findActivePendingCandidateSteps();
+    const candidates = await approvalRepository.findActivePendingCandidateSteps(
+      undefined,
+      tenantWhere(user).organizationId
+    );
 
     // Cache entity details per (entityType, entityId) to avoid duplicate queries
     const detailsCache = new Map<string, ApprovalEntityDetails | null>();
@@ -361,6 +388,8 @@ export class ApprovalService {
       if (!step) {
         throw AppError.notFound("Approval step not found");
       }
+
+      assertSameTenant((step as { organizationId?: string }).organizationId, user, "Approval step not found");
 
       if (step.status !== ApprovalStatus.PENDING) {
         throw AppError.conflict(
@@ -522,6 +551,8 @@ export class ApprovalService {
         throw AppError.notFound("Approval step not found");
       }
 
+      assertSameTenant((step as { organizationId?: string }).organizationId, user, "Approval step not found");
+
       if (step.status !== ApprovalStatus.PENDING) {
         throw AppError.conflict(
           `Approval step has already been decided with status: ${step.status}`
@@ -654,7 +685,7 @@ export class ApprovalService {
     user: AuthenticatedUser,
     newApproverId: string
   ) {
-    if (user.role !== Role.ADMIN) {
+    if (!isAdminRole(user)) {
       throw AppError.forbidden("Only admins can reassign or delegate approval steps");
     }
 
@@ -662,6 +693,8 @@ export class ApprovalService {
     if (!step) {
       throw AppError.notFound("Approval step not found");
     }
+
+    assertSameTenant((step as { organizationId?: string }).organizationId, user, "Approval step not found");
 
     if (step.status !== ApprovalStatus.PENDING) {
       throw AppError.conflict("Cannot reassign an approval step that has already been decided");
@@ -671,7 +704,12 @@ export class ApprovalService {
       where: { id: newApproverId },
     });
 
-    if (!targetUser || !targetUser.isActive) {
+    const stepOrgId = (step as { organizationId?: string }).organizationId;
+    if (
+      !targetUser ||
+      !targetUser.isActive ||
+      (stepOrgId && targetUser.organizationId !== stepOrgId)
+    ) {
       throw AppError.badRequest("Target approver user does not exist or is inactive");
     }
 
@@ -723,7 +761,7 @@ export class ApprovalService {
     user: AuthenticatedUser,
     comment?: string
   ) {
-    if (user.role !== Role.MANAGER && user.role !== Role.ADMIN) {
+    if (user.role !== Role.MANAGER && !isAdminRole(user)) {
       throw AppError.forbidden("Only managers and admins can approve requests");
     }
 

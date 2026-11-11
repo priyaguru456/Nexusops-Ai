@@ -112,7 +112,7 @@ export class AnnouncementController {
       if (!req.user) {
         throw AppError.unauthorized();
       }
-      const departments = await announcementService.getDepartments();
+      const departments = await announcementService.getDepartments(req.user);
       res.status(200).json({ departments });
     } catch (error) {
       next(error);

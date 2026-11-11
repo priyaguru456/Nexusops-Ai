@@ -7,6 +7,13 @@ import {
 } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { AppError } from "../../lib/errors";
+import {
+  assertSameTenant,
+  DEFAULT_ORGANIZATION_ID,
+  isAdminRole,
+  isSuperAdmin,
+  resolveTenantId,
+} from "../../lib/tenant";
 import { expenseRepository } from "./expense.repository";
 import { EXPENSE_CONFIG } from "./expense.config";
 import { storageService } from "../../lib/storage";
@@ -22,6 +29,12 @@ import type {
   ListExpensesQuery,
 } from "./expense.schema";
 
+function resolveOptionalExpenseOrgId(user: AuthenticatedUser): string | undefined {
+  if (user.organizationId === undefined) return undefined;
+  if (isSuperAdmin(user) && !user.organizationId) return undefined;
+  return resolveTenantId(user);
+}
+
 export class ExpenseService {
   /**
    * Helper to verify if a user belongs to Finance department or holds the ADMIN role.
@@ -30,7 +43,7 @@ export class ExpenseService {
     user: AuthenticatedUser,
     tx?: Prisma.TransactionClient
   ): Promise<boolean> {
-    if (user.role === Role.ADMIN) return true;
+    if (isAdminRole(user)) return true;
     if (!user.departmentId) return false;
 
     const client = tx || prisma;
@@ -50,7 +63,7 @@ export class ExpenseService {
     user: AuthenticatedUser,
     tx?: Prisma.TransactionClient
   ): Promise<boolean> {
-    if (user.role === Role.ADMIN) return true;
+    if (isAdminRole(user)) return true;
 
     const client = tx || prisma;
     const steps = (await client.approvalStep.findMany({
@@ -85,8 +98,11 @@ export class ExpenseService {
   ) {
     const rawItems = input.items || [];
     const serverTotal = this.calculateTotalAmount(rawItems);
+    const orgId =
+      user.organizationId !== undefined ? resolveTenantId(user) : DEFAULT_ORGANIZATION_ID;
 
     const claim = await expenseRepository.createClaim({
+      organizationId: orgId,
       title: input.title,
       totalAmount: serverTotal,
       status: ExpenseStatus.DRAFT,
@@ -101,6 +117,7 @@ export class ExpenseService {
     });
 
     await auditService.log({
+      organizationId: user.organizationId !== undefined ? orgId : null,
       actorId: user.id,
       action: "EXPENSE_CLAIM_CREATED",
       entityType: "ExpenseClaim",
@@ -130,6 +147,7 @@ export class ExpenseService {
     const page = query.page && query.page > 0 ? query.page : 1;
     const limit = query.limit && query.limit > 0 ? Math.min(query.limit, 100) : 20;
     const skip = (page - 1) * limit;
+    const orgId = resolveOptionalExpenseOrgId(user);
 
     const isFinOrAdmin = await this.isFinanceOrAdmin(user);
 
@@ -141,6 +159,7 @@ export class ExpenseService {
       // Finance view queues approved claims awaiting payout
       const { items, total } = await expenseRepository.listClaims(
         {
+          ...(orgId ? { organizationId: orgId } : {}),
           status: ExpenseStatus.APPROVED,
           search: query.search,
         },
@@ -172,6 +191,7 @@ export class ExpenseService {
 
     const { items, total } = await expenseRepository.listClaims(
       {
+        ...(orgId ? { organizationId: orgId } : {}),
         employeeId: employeeIdFilter,
         status: query.status as ExpenseStatus | undefined,
         search: query.search,
@@ -209,6 +229,8 @@ export class ExpenseService {
     if (!claim) {
       throw AppError.notFound(`Expense claim with ID ${claimId} not found`);
     }
+
+    assertSameTenant(claim.organizationId, user, `Expense claim with ID ${claimId} not found`);
 
     const isOwner = claim.employeeId === user.id;
     const isDirectManager = (claim.employee as any)?.managerId === user.id;
@@ -257,11 +279,13 @@ export class ExpenseService {
       throw AppError.notFound(`Expense claim with ID ${claimId} not found`);
     }
 
+    assertSameTenant(claim.organizationId, user, `Expense claim with ID ${claimId} not found`);
+
     if (claim.status !== ExpenseStatus.DRAFT) {
       throw AppError.badRequest("Only DRAFT expense claims can be edited");
     }
 
-    if (claim.employeeId !== user.id && user.role !== Role.ADMIN) {
+    if (claim.employeeId !== user.id && !isAdminRole(user)) {
       throw AppError.forbidden("You do not have permission to edit this expense claim");
     }
 
@@ -270,6 +294,7 @@ export class ExpenseService {
     });
 
     await auditService.log({
+      organizationId: claim.organizationId ?? null,
       actorId: user.id,
       action: "EXPENSE_CLAIM_UPDATED",
       entityType: "ExpenseClaim",
@@ -291,17 +316,20 @@ export class ExpenseService {
       throw AppError.notFound(`Expense claim with ID ${claimId} not found`);
     }
 
+    assertSameTenant(claim.organizationId, user, `Expense claim with ID ${claimId} not found`);
+
     if (claim.status !== ExpenseStatus.DRAFT) {
       throw AppError.badRequest("Only DRAFT expense claims can be deleted");
     }
 
-    if (claim.employeeId !== user.id && user.role !== Role.ADMIN) {
+    if (claim.employeeId !== user.id && !isAdminRole(user)) {
       throw AppError.forbidden("You do not have permission to delete this expense claim");
     }
 
     await expenseRepository.deleteClaim(claimId);
 
     await auditService.log({
+      organizationId: claim.organizationId ?? null,
       actorId: user.id,
       action: "EXPENSE_CLAIM_DELETED",
       entityType: "ExpenseClaim",
@@ -327,11 +355,13 @@ export class ExpenseService {
         throw AppError.notFound(`Expense claim with ID ${claimId} not found`);
       }
 
+      assertSameTenant(claim.organizationId, user, `Expense claim with ID ${claimId} not found`);
+
       if (claim.status !== ExpenseStatus.DRAFT) {
         throw AppError.badRequest("Only DRAFT expense claims can be edited");
       }
 
-      if (claim.employeeId !== user.id && user.role !== Role.ADMIN) {
+      if (claim.employeeId !== user.id && !isAdminRole(user)) {
         throw AppError.forbidden("You do not have permission to modify this expense claim");
       }
 
@@ -376,11 +406,13 @@ export class ExpenseService {
         throw AppError.notFound(`Expense claim with ID ${claimId} not found`);
       }
 
+      assertSameTenant(claim.organizationId, user, `Expense claim with ID ${claimId} not found`);
+
       if (claim.status !== ExpenseStatus.DRAFT) {
         throw AppError.badRequest("Only DRAFT expense claims can be edited");
       }
 
-      if (claim.employeeId !== user.id && user.role !== Role.ADMIN) {
+      if (claim.employeeId !== user.id && !isAdminRole(user)) {
         throw AppError.forbidden("You do not have permission to modify this expense claim");
       }
 
@@ -429,11 +461,13 @@ export class ExpenseService {
         throw AppError.notFound(`Expense claim with ID ${claimId} not found`);
       }
 
+      assertSameTenant(claim.organizationId, user, `Expense claim with ID ${claimId} not found`);
+
       if (claim.status !== ExpenseStatus.DRAFT) {
         throw AppError.badRequest("Only DRAFT expense claims can be edited");
       }
 
-      if (claim.employeeId !== user.id && user.role !== Role.ADMIN) {
+      if (claim.employeeId !== user.id && !isAdminRole(user)) {
         throw AppError.forbidden("You do not have permission to modify this expense claim");
       }
 
@@ -476,13 +510,15 @@ export class ExpenseService {
         throw AppError.notFound(`Expense claim with ID ${claimId} not found`);
       }
 
+      assertSameTenant(claim.organizationId, user, `Expense claim with ID ${claimId} not found`);
+
       if (claim.status !== ExpenseStatus.DRAFT) {
         throw AppError.badRequest(
           `Cannot submit an expense claim that is already in ${claim.status} status`
         );
       }
 
-      if (claim.employeeId !== user.id && user.role !== Role.ADMIN) {
+      if (claim.employeeId !== user.id && !isAdminRole(user)) {
         throw AppError.forbidden("You do not have permission to submit this expense claim");
       }
 
@@ -532,9 +568,13 @@ export class ExpenseService {
         managerApproverId = requester.managerId;
       }
 
-      // Determine Step 2 Approver: Finance user/manager, or Admin
+      // Determine Step 2 Approver: Finance user/manager, or Admin within the same organization
+      const claimOrgId =
+        claim.organizationId ??
+        (user.organizationId !== undefined ? resolveTenantId(user) : DEFAULT_ORGANIZATION_ID);
       const financeUser = await tx.user.findFirst({
         where: {
+          organizationId: claimOrgId,
           department: {
             name: {
               equals: "Finance",
@@ -557,6 +597,7 @@ export class ExpenseService {
           entityId: claimId,
           title: `Expense Claim: ${claim.title} (₹${(serverTotal / 100).toFixed(2)})`,
           requesterId: user.id,
+          organizationId: claimOrgId,
           steps: [
             {
               stepOrder: 1,
@@ -575,6 +616,7 @@ export class ExpenseService {
 
       // Audit log
       await auditService.log({
+        organizationId: claim.organizationId ?? null,
         actorId: user.id,
         action: "EXPENSE_CLAIM_SUBMITTED",
         entityType: "ExpenseClaim",
@@ -632,17 +674,18 @@ export class ExpenseService {
         throw AppError.notFound(`Expense claim with ID ${claimId} not found`);
       }
 
+      assertSameTenant(claim.organizationId, user, `Expense claim with ID ${claimId} not found`);
+
       if (claim.status !== ExpenseStatus.APPROVED) {
         throw AppError.badRequest(
           `Cannot mark claim as paid: current status is ${claim.status}. Only APPROVED claims can be reimbursed.`
         );
       }
 
-      // Check uniqueness of payment reference
-      const existingWithRef = await expenseRepository.findClaimByPaymentReference(
-        trimmedRef,
-        tx
-      );
+      // Check uniqueness of payment reference within the organization
+      const existingWithRef = await (claim.organizationId !== undefined
+        ? expenseRepository.findClaimByPaymentReference(trimmedRef, tx, claim.organizationId)
+        : expenseRepository.findClaimByPaymentReference(trimmedRef, tx));
       if (existingWithRef && existingWithRef.id !== claimId) {
         throw AppError.conflict(
           `Payment reference "${trimmedRef}" has already been used on another expense claim`
@@ -661,6 +704,7 @@ export class ExpenseService {
       );
 
       await auditService.log({
+        organizationId: claim.organizationId ?? null,
         actorId: user.id,
         action: "EXPENSE_PAID",
         entityType: "ExpenseClaim",
@@ -746,6 +790,7 @@ export class ExpenseService {
     const item = await expenseRepository.findItemByReceiptUrlContains(safeName);
 
     if (item && item.claim) {
+      assertSameTenant(item.claim.organizationId, user, "Receipt file not found");
       const isOwner = item.claim.employeeId === user.id;
       const isFinOrAdmin = await this.isFinanceOrAdmin(user);
       const isApprover = !isOwner && !isFinOrAdmin ? await this.isUserApproverForClaim(item.claim.id, user) : false;
@@ -756,7 +801,7 @@ export class ExpenseService {
     } else {
       // If not yet linked, allow only Finance/Admin or file uploader
       const isFinOrAdmin = await this.isFinanceOrAdmin(user);
-      if (!isFinOrAdmin && user.role !== Role.ADMIN) {
+      if (!isFinOrAdmin && !isAdminRole(user)) {
         // Safe access check
       }
     }
@@ -786,7 +831,10 @@ export class ExpenseService {
     let financeQueueSummary = null;
     const isFinOrAdmin = await this.isFinanceOrAdmin(user);
     if (isFinOrAdmin || user.role === Role.MANAGER) {
-      financeQueueSummary = await expenseRepository.getFinanceQueueSummary();
+      const orgId = resolveOptionalExpenseOrgId(user);
+      financeQueueSummary = await (orgId !== undefined
+        ? expenseRepository.getFinanceQueueSummary(undefined, orgId)
+        : expenseRepository.getFinanceQueueSummary());
     }
 
     return {

@@ -4,8 +4,10 @@ import {
   ExpenseCategory,
 } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { DEFAULT_ORGANIZATION_ID } from "../../lib/tenant";
 
 export interface CreateClaimRepoData {
+  organizationId?: string;
   title: string;
   totalAmount: number; // in integer paise
   status: ExpenseStatus;
@@ -21,6 +23,7 @@ export interface CreateClaimRepoData {
 }
 
 export interface ListClaimsFilters {
+  organizationId?: string;
   employeeId?: string;
   status?: ExpenseStatus;
   statuses?: ExpenseStatus[];
@@ -32,6 +35,7 @@ export class ExpenseRepository {
     const client = tx || prisma;
     return client.expenseClaim.create({
       data: {
+        organizationId: data.organizationId ?? DEFAULT_ORGANIZATION_ID,
         title: data.title,
         totalAmount: data.totalAmount,
         status: data.status,
@@ -121,6 +125,10 @@ export class ExpenseRepository {
   ) {
     const client = tx || prisma;
     const where: Prisma.ExpenseClaimWhereInput = {};
+
+    if (filters.organizationId) {
+      where.organizationId = filters.organizationId;
+    }
 
     if (filters.employeeId) {
       where.employeeId = filters.employeeId;
@@ -232,10 +240,13 @@ export class ExpenseRepository {
     };
   }
 
-  async getFinanceQueueSummary(tx?: Prisma.TransactionClient) {
+  async getFinanceQueueSummary(tx?: Prisma.TransactionClient, organizationId?: string) {
     const client = tx || prisma;
     const approvedClaims = await client.expenseClaim.findMany({
-      where: { status: ExpenseStatus.APPROVED },
+      where: {
+        status: ExpenseStatus.APPROVED,
+        ...(organizationId ? { organizationId } : {}),
+      },
       select: { totalAmount: true },
     });
 
@@ -293,11 +304,17 @@ export class ExpenseRepository {
 
   async findClaimByPaymentReference(
     paymentReference: string,
-    tx?: Prisma.TransactionClient
+    tx?: Prisma.TransactionClient,
+    organizationId: string = DEFAULT_ORGANIZATION_ID
   ) {
     const client = tx || prisma;
     return client.expenseClaim.findUnique({
-      where: { paymentReference },
+      where: {
+        organizationId_paymentReference: {
+          organizationId,
+          paymentReference,
+        },
+      },
     });
   }
 

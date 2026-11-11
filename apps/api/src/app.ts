@@ -3,10 +3,12 @@ import helmet from "helmet";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
+import swaggerUi from "swagger-ui-express";
 import { env } from "./config/env";
 import { logger } from "./lib/logger";
 import { prisma } from "./lib/prisma";
 import { AppError } from "./lib/errors";
+import { loadOpenApiSpec } from "./lib/openapi";
 import { notFound, errorHandler } from "./middleware/errorHandler";
 import { authRouter } from "./modules/auth/auth.routes";
 import { userRouter } from "./modules/users/user.routes";
@@ -28,6 +30,7 @@ import { leaveRouter } from "./modules/leaves/leave.routes";
 import { calendarRouter } from "./modules/calendar/calendar.routes";
 import { expenseRouter } from "./modules/expenses/expense.routes";
 import { surveyRouter } from "./modules/surveys/survey.routes";
+import { organizationRouter } from "./modules/organizations/organization.routes";
 
 export const app = express();
 
@@ -102,6 +105,30 @@ app.use("/api/leaves", leaveRouter);
 app.use("/api/calendar", calendarRouter);
 app.use("/api/expenses", expenseRouter);
 app.use("/api/surveys", surveyRouter);
+app.use("/api/organizations", organizationRouter);
+
+// OpenAPI / Swagger UI documentation
+app.get("/api/docs.json", (_req, res) => {
+  res.json(loadOpenApiSpec());
+});
+
+app.use(
+  "/api/docs",
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        "script-src": ["'self'", "'unsafe-inline'"],
+        "style-src": ["'self'", "'unsafe-inline'"],
+        "img-src": ["'self'", "data:", "https://validator.swagger.io"],
+      },
+    },
+  }),
+  swaggerUi.serve,
+  swaggerUi.setup(loadOpenApiSpec(), {
+    customSiteTitle: "NexusOps AI API Documentation",
+  })
+);
 
 app.use(notFound);
 app.use(errorHandler);

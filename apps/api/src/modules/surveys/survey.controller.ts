@@ -78,9 +78,9 @@ export class SurveyController {
     }
   }
 
-  async listSurveys(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  async listSurveys(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const surveys = await surveyService.listSurveys();
+      const surveys = await surveyService.listSurveys(req.user);
       res.status(200).json({
         surveys,
       });
@@ -92,7 +92,7 @@ export class SurveyController {
   async getSurveyById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const id = String(req.params.id);
-      const survey = await surveyService.getSurveyById(id);
+      const survey = await surveyService.getSurveyById(id, req.user);
       res.status(200).json({
         survey,
       });
@@ -108,7 +108,7 @@ export class SurveyController {
         fromDate?: string;
         toDate?: string;
       };
-      const results = await surveyService.getResults(surveyId, fromDate, toDate);
+      const results = await surveyService.getResults(surveyId, fromDate, toDate, req.user);
       res.status(200).json({
         results,
       });
@@ -126,12 +126,15 @@ export class SurveyController {
         limit?: number;
       };
 
-      const paged = await surveyService.listResponses({
-        surveyId,
-        entityType,
-        page: Number(page),
-        limit: Number(limit),
-      });
+      const paged = await surveyService.listResponses(
+        {
+          surveyId,
+          entityType,
+          page: Number(page),
+          limit: Number(limit),
+        },
+        req.user
+      );
 
       res.status(200).json(paged);
     } catch (err) {

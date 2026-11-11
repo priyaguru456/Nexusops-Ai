@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 
 export interface CreateAuditLogData {
   actorId?: string | null;
+  organizationId?: string | null;
   action: string;
   entityType: string;
   entityId?: string | null;
@@ -12,6 +13,7 @@ export interface CreateAuditLogData {
 }
 
 export interface AuditLogFilters {
+  organizationId?: string;
   action?: string;
   entityType?: string;
   entityId?: string;
@@ -28,6 +30,7 @@ export class AuditRepository {
     return prisma.auditLog.create({
       data: {
         actorId: data.actorId ?? null,
+        organizationId: data.organizationId ?? null,
         action: data.action,
         entityType: data.entityType,
         entityId: data.entityId ?? null,
@@ -40,6 +43,10 @@ export class AuditRepository {
 
   private buildWhere(filters: Omit<AuditLogFilters, "page" | "limit">): Prisma.AuditLogWhereInput {
     const where: Prisma.AuditLogWhereInput = {};
+
+    if (filters.organizationId) {
+      where.organizationId = filters.organizationId;
+    }
 
     if (filters.action?.trim()) {
       where.action = { contains: filters.action.trim(), mode: "insensitive" };

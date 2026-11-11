@@ -1,5 +1,6 @@
 import { Role } from "@prisma/client";
 import { AppError } from "../../lib/errors";
+import { assertSameTenant, isAdminRole, isSuperAdmin, resolveTenantId } from "../../lib/tenant";
 import { announcementRepository } from "./announcement.repository";
 import { auditService } from "../audit/audit.service";
 import { notificationService } from "../notifications/notification.service";
@@ -10,27 +11,43 @@ import type {
 } from "./announcement.schema";
 import type { AuthenticatedUser } from "../../types/express";
 
+function resolveOptionalOrgId(user: AuthenticatedUser): string | undefined {
+  if (user.organizationId === undefined) return undefined;
+  if (isSuperAdmin(user) && !user.organizationId) return undefined;
+  return resolveTenantId(user);
+}
+
 export class AnnouncementService {
   async list(user: AuthenticatedUser, query: AnnouncementQueryInput) {
-    const result = await announcementRepository.findVisibleForUser(
-      user.id,
-      user.departmentId,
-      user.role,
-      query
-    );
+    const orgId = resolveOptionalOrgId(user);
+    const result = await (orgId !== undefined
+      ? announcementRepository.findVisibleForUser(
+          user.id,
+          user.departmentId,
+          user.role,
+          query,
+          orgId
+        )
+      : announcementRepository.findVisibleForUser(
+          user.id,
+          user.departmentId,
+          user.role,
+          query
+        ));
 
     // Compute target counts for visible announcements
     const items = await Promise.all(
       result.items.map(async (item) => {
         const isRead = item.reads.length > 0;
         const readAt = item.reads[0]?.readAt ?? null;
-        const isAuthorOrAdmin = item.authorId === user.id || user.role === Role.ADMIN;
+        const isAuthorOrAdmin = item.authorId === user.id || isAdminRole(user);
 
         let totalTargetUsers: number | undefined;
         if (isAuthorOrAdmin) {
-          totalTargetUsers = await announcementRepository.countTargetUsers(
-            item.targetDepartmentId
-          );
+          const itemOrgId = (item as { organizationId?: string }).organizationId ?? orgId;
+          totalTargetUsers = await (itemOrgId !== undefined
+            ? announcementRepository.countTargetUsers(item.targetDepartmentId, itemOrgId)
+            : announcementRepository.countTargetUsers(item.targetDepartmentId));
         }
 
         return {
@@ -70,8 +87,10 @@ export class AnnouncementService {
       throw AppError.notFound("Announcement not found");
     }
 
+    assertSameTenant(item.organizationId, user, "Announcement not found");
+
     // Visibility permission check
-    if (user.role !== Role.ADMIN) {
+    if (!isAdminRole(user)) {
       if (item.targetDepartmentId !== null && item.targetDepartmentId !== user.departmentId) {
         throw AppError.notFound("Announcement not found");
       }
@@ -79,11 +98,14 @@ export class AnnouncementService {
 
     const isRead = Array.isArray(item.reads) && item.reads.length > 0;
     const readAt = Array.isArray(item.reads) && item.reads.length > 0 ? item.reads[0].readAt : null;
-    const isAuthorOrAdmin = item.authorId === user.id || user.role === Role.ADMIN;
+    const isAuthorOrAdmin = item.authorId === user.id || isAdminRole(user);
 
     let totalTargetUsers: number | undefined;
     if (isAuthorOrAdmin) {
-      totalTargetUsers = await announcementRepository.countTargetUsers(item.targetDepartmentId);
+      const orgId = item.organizationId ?? resolveOptionalOrgId(user);
+      totalTargetUsers = await (orgId !== undefined
+        ? announcementRepository.countTargetUsers(item.targetDepartmentId, orgId)
+        : announcementRepository.countTargetUsers(item.targetDepartmentId));
     }
 
     return {
@@ -107,10 +129,11 @@ export class AnnouncementService {
   }
 
   async create(user: AuthenticatedUser, data: CreateAnnouncementInput) {
-    if (user.role !== Role.ADMIN && user.role !== Role.MANAGER) {
+    if (!isAdminRole(user) && user.role !== Role.MANAGER) {
       throw AppError.forbidden("Only Administrators and Managers can post announcements");
     }
 
+    const orgId = user.organizationId !== undefined ? resolveTenantId(user) : undefined;
     let targetDepartmentId = data.targetDepartmentId;
 
     // Manager role restriction: A Manager may only target their own department
@@ -128,6 +151,7 @@ export class AnnouncementService {
     }
 
     const created = await announcementRepository.create({
+      ...(orgId !== undefined ? { organizationId: orgId } : {}),
       title: data.title,
       content: data.content,
       priority: data.priority,
@@ -139,6 +163,7 @@ export class AnnouncementService {
 
     // Record audit log
     await auditService.log({
+      organizationId: created.organizationId ?? orgId ?? null,
       actorId: user.id,
       action: "ANNOUNCEMENT_CREATED",
       entityType: "Announcement",
@@ -154,9 +179,10 @@ export class AnnouncementService {
     // Send notification for URGENT announcements
     if (created.priority === "URGENT") {
       try {
-        const targetUserIds = await announcementRepository.getTargetUserIds(
-          created.targetDepartmentId
-        );
+        const targetOrgId = created.organizationId ?? orgId;
+        const targetUserIds = await (targetOrgId !== undefined
+          ? announcementRepository.getTargetUserIds(created.targetDepartmentId, targetOrgId)
+          : announcementRepository.getTargetUserIds(created.targetDepartmentId));
         // Exclude author from self-notification
         const recipientIds = targetUserIds.filter((id) => id !== user.id);
 
@@ -176,9 +202,10 @@ export class AnnouncementService {
       }
     }
 
-    const totalTargetUsers = await announcementRepository.countTargetUsers(
-      created.targetDepartmentId
-    );
+    const countOrgId = created.organizationId ?? orgId;
+    const totalTargetUsers = await (countOrgId !== undefined
+      ? announcementRepository.countTargetUsers(created.targetDepartmentId, countOrgId)
+      : announcementRepository.countTargetUsers(created.targetDepartmentId));
 
     return {
       ...created,
@@ -195,7 +222,9 @@ export class AnnouncementService {
       throw AppError.notFound("Announcement not found");
     }
 
-    if (user.role !== Role.ADMIN && user.role !== Role.MANAGER) {
+    assertSameTenant(existing.organizationId, user, "Announcement not found");
+
+    if (!isAdminRole(user) && user.role !== Role.MANAGER) {
       throw AppError.forbidden("Only Administrators and Managers can update announcements");
     }
 
@@ -219,6 +248,7 @@ export class AnnouncementService {
     });
 
     await auditService.log({
+      organizationId: existing.organizationId ?? null,
       actorId: user.id,
       action: "ANNOUNCEMENT_UPDATED",
       entityType: "Announcement",
@@ -240,7 +270,9 @@ export class AnnouncementService {
       throw AppError.notFound("Announcement not found");
     }
 
-    if (user.role !== Role.ADMIN && user.role !== Role.MANAGER) {
+    assertSameTenant(existing.organizationId, user, "Announcement not found");
+
+    if (!isAdminRole(user) && user.role !== Role.MANAGER) {
       throw AppError.forbidden("Only Administrators and Managers can delete announcements");
     }
 
@@ -253,6 +285,7 @@ export class AnnouncementService {
     await announcementRepository.delete(id);
 
     await auditService.log({
+      organizationId: existing.organizationId ?? null,
       actorId: user.id,
       action: "ANNOUNCEMENT_DELETED",
       entityType: "Announcement",
@@ -271,7 +304,9 @@ export class AnnouncementService {
       throw AppError.notFound("Announcement not found");
     }
 
-    if (user.role !== Role.ADMIN) {
+    assertSameTenant(existing.organizationId, user, "Announcement not found");
+
+    if (!isAdminRole(user)) {
       if (existing.targetDepartmentId !== null && existing.targetDepartmentId !== user.departmentId) {
         throw AppError.notFound("Announcement not found");
       }
@@ -290,20 +325,33 @@ export class AnnouncementService {
       throw AppError.notFound("Announcement not found");
     }
 
-    if (existing.authorId !== user.id && user.role !== Role.ADMIN) {
+    assertSameTenant(existing.organizationId, user, "Announcement not found");
+
+    if (existing.authorId !== user.id && !isAdminRole(user)) {
       throw AppError.forbidden("Only the author or an Administrator can view read metrics");
     }
 
-    return announcementRepository.getReadStats(id, existing.targetDepartmentId);
+    return existing.organizationId !== undefined
+      ? announcementRepository.getReadStats(id, existing.targetDepartmentId, existing.organizationId)
+      : announcementRepository.getReadStats(id, existing.targetDepartmentId);
   }
 
   async getUnreadForDashboard(user: AuthenticatedUser, limit = 3) {
-    const items = await announcementRepository.getUnreadAnnouncements(
-      user.id,
-      user.departmentId,
-      user.role,
-      limit
-    );
+    const orgId = resolveOptionalOrgId(user);
+    const items = await (orgId !== undefined
+      ? announcementRepository.getUnreadAnnouncements(
+          user.id,
+          user.departmentId,
+          user.role,
+          limit,
+          orgId
+        )
+      : announcementRepository.getUnreadAnnouncements(
+          user.id,
+          user.departmentId,
+          user.role,
+          limit
+        ));
 
     return items.map((item) => ({
       id: item.id,
@@ -320,8 +368,9 @@ export class AnnouncementService {
     }));
   }
 
-  async getDepartments() {
-    return announcementRepository.getDepartments();
+  async getDepartments(user?: AuthenticatedUser) {
+    const orgId = user ? resolveOptionalOrgId(user) : undefined;
+    return announcementRepository.getDepartments(orgId);
   }
 }
 

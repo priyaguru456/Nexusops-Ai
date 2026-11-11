@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma";
+import { DEFAULT_ORGANIZATION_ID } from "../../lib/tenant";
 import {
   Prisma,
   LeaveType,
@@ -15,11 +16,13 @@ export class LeaveRepository {
   async findHolidaysBetween(
     startDate: Date,
     endDate: Date,
-    tx?: Prisma.TransactionClient
+    tx?: Prisma.TransactionClient,
+    organizationId?: string
   ): Promise<Holiday[]> {
     const client = tx || prisma;
     return client.holiday.findMany({
       where: {
+        ...(organizationId ? { organizationId } : {}),
         date: {
           gte: startDate,
           lte: endDate,
@@ -34,10 +37,15 @@ export class LeaveRepository {
    */
   async findAllHolidays(
     year?: number,
-    tx?: Prisma.TransactionClient
+    tx?: Prisma.TransactionClient,
+    organizationId?: string
   ): Promise<Holiday[]> {
     const client = tx || prisma;
     const where: Prisma.HolidayWhereInput = {};
+
+    if (organizationId) {
+      where.organizationId = organizationId;
+    }
 
     if (year) {
       const yearStart = new Date(Date.UTC(year, 0, 1));
@@ -55,23 +63,35 @@ export class LeaveRepository {
    * Creates a new company holiday.
    */
   async createHoliday(
-    data: { name: string; date: Date },
+    data: { name: string; date: Date; organizationId?: string },
     tx?: Prisma.TransactionClient
   ): Promise<Holiday> {
     const client = tx || prisma;
-    return client.holiday.create({ data });
+    return client.holiday.create({
+      data: {
+        name: data.name,
+        date: data.date,
+        organizationId: data.organizationId ?? DEFAULT_ORGANIZATION_ID,
+      },
+    });
   }
 
   /**
-   * Finds a holiday by its exact UTC date.
+   * Finds a holiday by its exact UTC date within an organization.
    */
   async findHolidayByDate(
     date: Date,
-    tx?: Prisma.TransactionClient
+    tx?: Prisma.TransactionClient,
+    organizationId: string = DEFAULT_ORGANIZATION_ID
   ): Promise<Holiday | null> {
     const client = tx || prisma;
     return client.holiday.findUnique({
-      where: { date },
+      where: {
+        organizationId_date: {
+          organizationId,
+          date,
+        },
+      },
     });
   }
 
@@ -268,6 +288,7 @@ export class LeaveRepository {
    */
   async listLeaves(
     filters: {
+      organizationId?: string;
       userId?: string;
       userIds?: string[];
       status?: LeaveStatus;
@@ -280,6 +301,10 @@ export class LeaveRepository {
   ) {
     const client = tx || prisma;
     const where: Prisma.LeaveRequestWhereInput = {};
+
+    if (filters.organizationId) {
+      where.organizationId = filters.organizationId;
+    }
 
     if (filters.userId) {
       where.userId = filters.userId;
@@ -334,6 +359,7 @@ export class LeaveRepository {
    */
   async countLeaves(
     filters: {
+      organizationId?: string;
       userId?: string;
       userIds?: string[];
       status?: LeaveStatus;
@@ -344,6 +370,10 @@ export class LeaveRepository {
   ): Promise<number> {
     const client = tx || prisma;
     const where: Prisma.LeaveRequestWhereInput = {};
+
+    if (filters.organizationId) {
+      where.organizationId = filters.organizationId;
+    }
 
     if (filters.userId) {
       where.userId = filters.userId;

@@ -26,10 +26,10 @@ describe("AI Chat Module Tests (Task 9)", () => {
   let deptSalesId: string;
   let deptEngineeringId: string;
 
-  let adminUser: { id: string; role: Role; departmentId: string | null; email: string };
-  let managerSales: { id: string; role: Role; departmentId: string | null; email: string };
-  let employeeSales: { id: string; role: Role; departmentId: string | null; email: string };
-  let employeeEngineering: { id: string; role: Role; departmentId: string | null; email: string };
+  let adminUser: { id: string; role: Role; departmentId: string | null; email: string; organizationId: string | null };
+  let managerSales: { id: string; role: Role; departmentId: string | null; email: string; organizationId: string | null };
+  let employeeSales: { id: string; role: Role; departmentId: string | null; email: string; organizationId: string | null };
+  let employeeEngineering: { id: string; role: Role; departmentId: string | null; email: string; organizationId: string | null };
 
   let adminToken: string;
   let managerSalesToken: string;
@@ -50,12 +50,24 @@ describe("AI Chat Module Tests (Task 9)", () => {
     setLLMProvider(mockLLM);
     setEmbeddingsProvider(mockEmbeddings);
 
+    // 1.5 Ensure test organization exists
+    const testOrg = await prisma.organization.upsert({
+      where: { slug: "chat-test-org" },
+      update: { isActive: true },
+      create: {
+        name: "Chat Test Org",
+        slug: "chat-test-org",
+        isActive: true,
+      },
+    });
+    const orgId = testOrg.id;
+
     // 2. Create Departments
     const dept1 = await prisma.department.create({
-      data: { name: `Sales Dept ${Date.now()}` },
+      data: { name: `Sales Dept ${Date.now()}`, organizationId: orgId },
     });
     const dept2 = await prisma.department.create({
-      data: { name: `Engineering Dept ${Date.now()}` },
+      data: { name: `Engineering Dept ${Date.now()}`, organizationId: orgId },
     });
     deptSalesId = dept1.id;
     deptEngineeringId = dept2.id;
@@ -68,6 +80,7 @@ describe("AI Chat Module Tests (Task 9)", () => {
         email: `alice-admin-${Date.now()}@test.com`,
         passwordHash: "hash123",
         role: Role.ADMIN,
+        organizationId: orgId,
         departmentId: deptSalesId,
       },
     });
@@ -76,6 +89,7 @@ describe("AI Chat Module Tests (Task 9)", () => {
       sub: adminUser.id,
       email: adminUser.email,
       role: adminUser.role,
+      organizationId: orgId,
     });
 
     managerSales = await prisma.user.create({
@@ -84,6 +98,7 @@ describe("AI Chat Module Tests (Task 9)", () => {
         email: `bob-mgr-${Date.now()}@test.com`,
         passwordHash: "hash123",
         role: Role.MANAGER,
+        organizationId: orgId,
         departmentId: deptSalesId,
       },
     });
@@ -92,6 +107,7 @@ describe("AI Chat Module Tests (Task 9)", () => {
       sub: managerSales.id,
       email: managerSales.email,
       role: managerSales.role,
+      organizationId: orgId,
     });
 
     employeeSales = await prisma.user.create({
@@ -100,6 +116,7 @@ describe("AI Chat Module Tests (Task 9)", () => {
         email: `charlie-sales-${Date.now()}@test.com`,
         passwordHash: "hash123",
         role: Role.EMPLOYEE,
+        organizationId: orgId,
         departmentId: deptSalesId,
       },
     });
@@ -108,6 +125,7 @@ describe("AI Chat Module Tests (Task 9)", () => {
       sub: employeeSales.id,
       email: employeeSales.email,
       role: employeeSales.role,
+      organizationId: orgId,
     });
 
     employeeEngineering = await prisma.user.create({
@@ -116,6 +134,7 @@ describe("AI Chat Module Tests (Task 9)", () => {
         email: `dave-eng-${Date.now()}@test.com`,
         passwordHash: "hash123",
         role: Role.EMPLOYEE,
+        organizationId: orgId,
         departmentId: deptEngineeringId,
       },
     });
@@ -124,12 +143,14 @@ describe("AI Chat Module Tests (Task 9)", () => {
       sub: employeeEngineering.id,
       email: employeeEngineering.email,
       role: employeeEngineering.role,
+      organizationId: orgId,
     });
 
     // 4. Create Documents for Retrieval Testing
     // A) Public document (ALL)
     const pubDoc = await prisma.document.create({
       data: {
+        organizationId: orgId,
         title: "Company Holiday Policy",
         fileName: "holiday-policy.pdf",
         filePath: "uploads/holiday.pdf",
@@ -145,6 +166,7 @@ describe("AI Chat Module Tests (Task 9)", () => {
 
     const chunk1 = await prisma.documentChunk.create({
       data: {
+        organizationId: orgId,
         documentId: publicDocId,
         chunkIndex: 0,
         pageNumber: 1,
@@ -156,6 +178,7 @@ describe("AI Chat Module Tests (Task 9)", () => {
     // B) Manager only document
     const mgrDoc = await prisma.document.create({
       data: {
+        organizationId: orgId,
         title: "Executive Compensation Review",
         fileName: "exec-comp.pdf",
         filePath: "uploads/exec.pdf",
@@ -171,6 +194,7 @@ describe("AI Chat Module Tests (Task 9)", () => {
 
     const chunk2 = await prisma.documentChunk.create({
       data: {
+        organizationId: orgId,
         documentId: managerDocId,
         chunkIndex: 0,
         pageNumber: 3,
@@ -182,6 +206,7 @@ describe("AI Chat Module Tests (Task 9)", () => {
     // C) Sales department document
     const salesDoc = await prisma.document.create({
       data: {
+        organizationId: orgId,
         title: "Sales Commission Structure",
         fileName: "commission.pdf",
         filePath: "uploads/commission.pdf",
@@ -198,6 +223,7 @@ describe("AI Chat Module Tests (Task 9)", () => {
 
     const chunk3 = await prisma.documentChunk.create({
       data: {
+        organizationId: orgId,
         documentId: salesDeptDocId,
         chunkIndex: 0,
         pageNumber: 2,
@@ -617,6 +643,7 @@ describe("AI Chat Module Tests (Task 9)", () => {
     beforeAll(async () => {
       const sess = await prisma.chatSession.create({
         data: {
+          organizationId: employeeSales.organizationId!,
           userId: employeeSales.id,
           title: "Charlie's Private Session",
         },
@@ -703,6 +730,7 @@ describe("AI Chat Module Tests (Task 9)", () => {
     beforeAll(async () => {
       const sess = await prisma.chatSession.create({
         data: {
+          organizationId: employeeSales.organizationId!,
           userId: employeeSales.id,
           title: "Feedback Test Session",
         },

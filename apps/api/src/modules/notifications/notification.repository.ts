@@ -3,6 +3,7 @@ import { prisma } from "../../lib/prisma";
 
 export interface CreateNotificationData {
   userId: string;
+  organizationId?: string;
   type: string;
   title?: string;
   message: string;
@@ -12,10 +13,26 @@ export interface CreateNotificationData {
 }
 
 export class NotificationRepository {
+  private async resolveOrganizationId(
+    userId: string,
+    explicitOrganizationId?: string
+  ): Promise<string> {
+    if (explicitOrganizationId) {
+      return explicitOrganizationId;
+    }
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { organizationId: true },
+    });
+    return user?.organizationId ?? "00000000-0000-4000-8000-000000000001";
+  }
+
   async create(data: CreateNotificationData) {
+    const organizationId = await this.resolveOrganizationId(data.userId, data.organizationId);
     return prisma.notification.create({
       data: {
         userId: data.userId,
+        organizationId,
         type: data.type,
         title: data.title ?? "",
         message: data.message,
@@ -29,9 +46,30 @@ export class NotificationRepository {
 
   async createMany(items: CreateNotificationData[]) {
     if (items.length === 0) return { count: 0 };
+
+    const missingUserIds = Array.from(
+      new Set(items.filter((i) => !i.organizationId).map((i) => i.userId))
+    );
+    const orgMap = new Map<string, string>();
+    if (missingUserIds.length > 0) {
+      const users = await prisma.user.findMany({
+        where: { id: { in: missingUserIds } },
+        select: { id: true, organizationId: true },
+      });
+      for (const u of users) {
+        if (u.organizationId) {
+          orgMap.set(u.id, u.organizationId);
+        }
+      }
+    }
+
     return prisma.notification.createMany({
       data: items.map((item) => ({
         userId: item.userId,
+        organizationId:
+          item.organizationId ??
+          orgMap.get(item.userId) ??
+          "00000000-0000-4000-8000-000000000001",
         type: item.type,
         title: item.title ?? "",
         message: item.message,

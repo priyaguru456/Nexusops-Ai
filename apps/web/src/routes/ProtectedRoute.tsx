@@ -1,14 +1,15 @@
 import React from "react";
 import { Navigate, useLocation, Outlet } from "react-router-dom";
 import { useAuth } from "../features/auth/AuthContext";
-import type { Role } from "../types/auth";
+import { hasRoleAccess, type Role } from "../types/auth";
 
 export interface ProtectedRouteProps {
   roles?: Role[];
+  exact?: boolean;
   children?: React.ReactNode;
 }
 
-export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ roles, children }) => {
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ roles, exact = false, children }) => {
   const { user, isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
 
@@ -29,7 +30,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ roles, children 
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (roles && roles.length > 0 && user && !roles.includes(user.role)) {
+  if (roles && roles.length > 0 && user && !hasRoleAccess(user.role, roles, exact)) {
     return <Navigate to="/403" replace />;
   }
 

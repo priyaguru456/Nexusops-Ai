@@ -7,7 +7,7 @@ export const userIdParamSchema = z.object({
 
 export const updateRoleSchema = z.object({
   role: z.nativeEnum(Role, {
-    message: "Role must be one of EMPLOYEE, MANAGER, ADMIN",
+    message: "Role must be one of EMPLOYEE, MANAGER, ADMIN, SUPER_ADMIN",
   }),
 });
 
@@ -21,6 +21,7 @@ export const getUsersQuerySchema = z.object({
   skip: z.coerce.number().min(0).optional(),
   take: z.coerce.number().min(1).max(100).optional(),
   role: z.nativeEnum(Role).optional(),
+  organizationId: z.string().uuid("Invalid organization ID").optional(),
   isActive: z
     .preprocess((val) => {
       if (typeof val === "string") {

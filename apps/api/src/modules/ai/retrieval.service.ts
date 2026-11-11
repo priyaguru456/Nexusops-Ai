@@ -37,41 +37,53 @@ export function buildPermissionFilterSql(user: {
   id: string;
   role: Role;
   departmentId: string | null;
+  organizationId?: string | null;
 }): Prisma.Sql {
-  if (user.role === Role.ADMIN) {
-    return Prisma.sql`TRUE`;
-  }
+  const isAdmin = user.role === Role.ADMIN || user.role === Role.SUPER_ADMIN;
 
-  if (user.role === Role.MANAGER) {
+  let roleFilter: Prisma.Sql;
+  if (isAdmin) {
+    roleFilter = Prisma.sql`TRUE`;
+  } else if (user.role === Role.MANAGER) {
     if (user.departmentId) {
-      return Prisma.sql`(
+      roleFilter = Prisma.sql`(
         d."visibility"::text = 'ALL'
         OR d."visibility"::text = 'MANAGERS'
         OR (d."visibility"::text = 'DEPARTMENT' AND d."departmentId" = ${user.departmentId})
         OR d."uploadedById" = ${user.id}
       )`;
     } else {
-      return Prisma.sql`(
+      roleFilter = Prisma.sql`(
         d."visibility"::text = 'ALL'
         OR d."visibility"::text = 'MANAGERS'
         OR d."uploadedById" = ${user.id}
       )`;
     }
+  } else {
+    // Role.EMPLOYEE
+    if (user.departmentId) {
+      roleFilter = Prisma.sql`(
+        d."visibility"::text = 'ALL'
+        OR (d."visibility"::text = 'DEPARTMENT' AND d."departmentId" = ${user.departmentId})
+        OR d."uploadedById" = ${user.id}
+      )`;
+    } else {
+      roleFilter = Prisma.sql`(
+        d."visibility"::text = 'ALL'
+        OR d."uploadedById" = ${user.id}
+      )`;
+    }
   }
 
-  // Role.EMPLOYEE
-  if (user.departmentId) {
-    return Prisma.sql`(
-      d."visibility"::text = 'ALL'
-      OR (d."visibility"::text = 'DEPARTMENT' AND d."departmentId" = ${user.departmentId})
-      OR d."uploadedById" = ${user.id}
-    )`;
-  } else {
-    return Prisma.sql`(
-      d."visibility"::text = 'ALL'
-      OR d."uploadedById" = ${user.id}
-    )`;
+  if (user.role !== Role.SUPER_ADMIN && user.organizationId) {
+    return Prisma.sql`(d."organizationId" = ${user.organizationId} AND c."organizationId" = ${user.organizationId} AND (${roleFilter}))`;
   }
+
+  if (user.role !== Role.SUPER_ADMIN && user.organizationId === null) {
+    return Prisma.sql`FALSE`;
+  }
+
+  return roleFilter;
 }
 
 /**
@@ -146,7 +158,7 @@ export const retrievalService = {
    */
   async searchVectors(
     questionVector: number[],
-    user: { id: string; role: Role; departmentId: string | null },
+    user: { id: string; role: Role; departmentId: string | null; organizationId?: string | null },
     limit = 8
   ): Promise<RetrievedChunk[]> {
     try {
@@ -212,7 +224,7 @@ export const retrievalService = {
    */
   async searchFullText(
     queryText: string,
-    user: { id: string; role: Role; departmentId: string | null },
+    user: { id: string; role: Role; departmentId: string | null; organizationId?: string | null },
     limit = 8
   ): Promise<RetrievedChunk[]> {
     const trimmed = queryText.trim();
@@ -275,7 +287,7 @@ export const retrievalService = {
    */
   async retrieve(
     question: string,
-    user: { id: string; role: Role; departmentId: string | null },
+    user: { id: string; role: Role; departmentId: string | null; organizationId?: string | null },
     options?: RetrievalOptions
   ): Promise<{
     results: RetrievedChunk[];

@@ -6,26 +6,44 @@ import { authRepository } from "../auth/auth.repository";
 import { auditService } from "../audit/audit.service";
 import { AppError } from "../../lib/errors";
 import { env } from "../../config/env";
+import { assertSameTenant, isSuperAdmin, tenantWhere } from "../../lib/tenant";
+import type { AuthenticatedUser } from "../../types/express";
 
 export class UserService {
-  async getUsers(filter: FindUsersFilter) {
-    return userRepository.findAll(filter);
+  async getUsers(filter: FindUsersFilter, actor?: AuthenticatedUser) {
+    const scopedFilter = actor
+      ? {
+          ...filter,
+          ...tenantWhere(actor, filter.organizationId),
+        }
+      : filter;
+    return userRepository.findAll(scopedFilter);
   }
 
   /**
-   * Counts currently active administrators in the system.
+   * Counts currently active administrators in the system (optionally per organization).
    */
-  async countActiveAdmins(): Promise<number> {
+  async countActiveAdmins(organizationId?: string | null): Promise<number> {
     return prisma.user.count({
       where: {
         role: Role.ADMIN,
         isActive: true,
+        ...(organizationId ? { organizationId } : {}),
       },
     });
   }
 
-  async updateRole(adminUserId: string, targetUserId: string, newRole: Role) {
-    if (adminUserId === targetUserId && newRole !== Role.ADMIN) {
+  async updateRole(
+    adminUserId: string,
+    targetUserId: string,
+    newRole: Role,
+    actor?: AuthenticatedUser
+  ) {
+    if (actor && isSuperAdmin(actor)) {
+      if (adminUserId === targetUserId && newRole !== Role.SUPER_ADMIN) {
+        throw AppError.badRequest("Super Admins cannot demote their own role");
+      }
+    } else if (adminUserId === targetUserId && newRole !== Role.ADMIN) {
       throw AppError.badRequest("Admins cannot demote their own role");
     }
 
@@ -34,10 +52,19 @@ export class UserService {
       throw AppError.notFound("User not found");
     }
 
-    // Protection: Never allow the system to end up with zero active admins.
+    if (actor) {
+      assertSameTenant(targetUser.organizationId, actor, "User not found");
+      if (!isSuperAdmin(actor)) {
+        if (newRole === Role.SUPER_ADMIN || targetUser.role === Role.SUPER_ADMIN) {
+          throw AppError.forbidden("Only Super Admins can assign or modify Super Admin roles");
+        }
+      }
+    }
+
+    // Protection: Never allow an organization to end up with zero active admins.
     // If targetUser is an active ADMIN and is being demoted to non-admin, verify count > 1.
     if (targetUser.role === Role.ADMIN && newRole !== Role.ADMIN && targetUser.isActive) {
-      const activeAdminsCount = await this.countActiveAdmins();
+      const activeAdminsCount = await this.countActiveAdmins(targetUser.organizationId);
       if (activeAdminsCount <= 1) {
         throw AppError.badRequest("Cannot demote the last active administrator");
       }
@@ -48,6 +75,7 @@ export class UserService {
 
     await auditService.log({
       actorId: adminUserId,
+      organizationId: targetUser.organizationId ?? null,
       action: "ROLE_CHANGE",
       entityType: "User",
       entityId: targetUserId,
@@ -61,7 +89,12 @@ export class UserService {
     return updatedUser;
   }
 
-  async updateStatus(adminUserId: string, targetUserId: string, isActive: boolean) {
+  async updateStatus(
+    adminUserId: string,
+    targetUserId: string,
+    isActive: boolean,
+    actor?: AuthenticatedUser
+  ) {
     if (adminUserId === targetUserId && !isActive) {
       throw AppError.badRequest("Admins cannot deactivate their own account");
     }
@@ -71,10 +104,17 @@ export class UserService {
       throw AppError.notFound("User not found");
     }
 
-    // Protection: Never allow the system to end up with zero active admins.
+    if (actor) {
+      assertSameTenant(targetUser.organizationId, actor, "User not found");
+      if (!isSuperAdmin(actor) && targetUser.role === Role.SUPER_ADMIN) {
+        throw AppError.forbidden("Only Super Admins can modify Super Admin status");
+      }
+    }
+
+    // Protection: Never allow an organization to end up with zero active admins.
     // If targetUser is an active ADMIN and is being deactivated, verify count > 1.
     if (targetUser.role === Role.ADMIN && !isActive && targetUser.isActive) {
-      const activeAdminsCount = await this.countActiveAdmins();
+      const activeAdminsCount = await this.countActiveAdmins(targetUser.organizationId);
       if (activeAdminsCount <= 1) {
         throw AppError.badRequest("Cannot deactivate the last active administrator");
       }
@@ -89,6 +129,7 @@ export class UserService {
 
       await auditService.log({
         actorId: adminUserId,
+        organizationId: targetUser.organizationId ?? null,
         action: "USER_DEACTIVATED",
         entityType: "User",
         entityId: targetUserId,
@@ -100,6 +141,7 @@ export class UserService {
     } else {
       await auditService.log({
         actorId: adminUserId,
+        organizationId: targetUser.organizationId ?? null,
         action: "USER_ACTIVATED",
         entityType: "User",
         entityId: targetUserId,
@@ -131,6 +173,7 @@ export class UserService {
 
     await auditService.log({
       actorId: userId,
+      organizationId: user.organizationId ?? null,
       action: "PROFILE_UPDATED",
       entityType: "User",
       entityId: userId,
@@ -179,6 +222,7 @@ export class UserService {
 
     await auditService.log({
       actorId: userId,
+      organizationId: user.organizationId ?? null,
       action: "PASSWORD_CHANGED",
       entityType: "User",
       entityId: userId,

@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { AppError } from "../../lib/errors";
+import { isSuperAdmin, resolveTenantId } from "../../lib/tenant";
 import { analyticsService } from "./analytics.service";
 import { digestService } from "./digest.service";
 import {
@@ -9,6 +10,19 @@ import {
   sendTestDigestSchema,
   digestDeliveriesQuerySchema,
 } from "./analytics.schema";
+
+function resolveDigestOrgId(req: Request): string | undefined {
+  if (!req.user) return undefined;
+  const requestedOrgId =
+    typeof req.query?.organizationId === "string" ? req.query.organizationId : undefined;
+  if (req.user.organizationId === undefined) {
+    return requestedOrgId;
+  }
+  if (isSuperAdmin(req.user) && !req.user.organizationId && !requestedOrgId) {
+    return undefined;
+  }
+  return resolveTenantId(req.user, requestedOrgId);
+}
 
 export const analyticsController = {
   /**
@@ -117,7 +131,8 @@ export const analyticsController = {
   async getDigestSchedule(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       if (!req.user) throw AppError.unauthorized();
-      const schedule = await digestService.getSchedule();
+      const orgId = resolveDigestOrgId(req);
+      const schedule = await digestService.getSchedule(orgId);
       res.status(200).json({
         status: "success",
         data: schedule,
@@ -135,7 +150,8 @@ export const analyticsController = {
     try {
       if (!req.user) throw AppError.unauthorized();
       const input = saveDigestScheduleSchema.parse(req.body);
-      const schedule = await digestService.saveSchedule(req.user.id, input);
+      const orgId = resolveDigestOrgId(req);
+      const schedule = await digestService.saveSchedule(req.user.id, input, orgId);
       res.status(200).json({
         status: "success",
         data: schedule,
@@ -153,12 +169,13 @@ export const analyticsController = {
     try {
       if (!req.user) throw AppError.unauthorized();
       const input = sendTestDigestSchema.parse(req.body);
+      const orgId = resolveDigestOrgId(req);
 
       let recipients = input.recipients;
       let scheduleId: string | undefined;
       let timezone = input.timezone;
 
-      const schedule = await digestService.getSchedule();
+      const schedule = await digestService.getSchedule(orgId);
       if (schedule) {
         scheduleId = schedule.id;
         if (!timezone) timezone = schedule.timezone;
@@ -173,6 +190,7 @@ export const analyticsController = {
 
       const result = await digestService.sendDigest({
         scheduleId,
+        organizationId: schedule?.organizationId ?? orgId,
         recipients,
         timezone,
         isTest: true,
@@ -205,7 +223,8 @@ export const analyticsController = {
     try {
       if (!req.user) throw AppError.unauthorized();
       const { page, limit } = digestDeliveriesQuerySchema.parse(req.query);
-      const result = await digestService.getDeliveries(page, limit);
+      const orgId = resolveDigestOrgId(req);
+      const result = await digestService.getDeliveries(page, limit, orgId);
       res.status(200).json({
         status: "success",
         data: result,

@@ -15,22 +15,43 @@ async function main() {
   console.log("Seeding database...");
 
   // 1. Seed 3 Departments
+  const DEFAULT_ORGANIZATION_ID = "00000000-0000-4000-8000-000000000001";
+
+  const defaultOrg = await prisma.organization.upsert({
+    where: { slug: "default" },
+    update: { name: "NexusOps Default", isActive: true },
+    create: {
+      id: DEFAULT_ORGANIZATION_ID,
+      name: "NexusOps Default",
+      slug: "default",
+      isActive: true,
+    },
+  });
+
+  console.log("✓ Organization seeded:", defaultOrg.name);
+
   const itDept = await prisma.department.upsert({
-    where: { name: "IT" },
+    where: {
+      organizationId_name: { organizationId: defaultOrg.id, name: "IT" },
+    },
     update: {},
-    create: { name: "IT" },
+    create: { name: "IT", organizationId: defaultOrg.id },
   });
 
   const hrDept = await prisma.department.upsert({
-    where: { name: "HR" },
+    where: {
+      organizationId_name: { organizationId: defaultOrg.id, name: "HR" },
+    },
     update: {},
-    create: { name: "HR" },
+    create: { name: "HR", organizationId: defaultOrg.id },
   });
 
   const financeDept = await prisma.department.upsert({
-    where: { name: "Finance" },
+    where: {
+      organizationId_name: { organizationId: defaultOrg.id, name: "Finance" },
+    },
     update: {},
-    create: { name: "Finance" },
+    create: { name: "Finance", organizationId: defaultOrg.id },
   });
 
   console.log("✓ Departments seeded: IT, HR, Finance");
@@ -39,12 +60,35 @@ async function main() {
   const rounds = env.BCRYPT_ROUNDS || 10;
   const passwordHash = await bcrypt.hash("Password@123", rounds);
 
+  // 0. Platform Super Admin (unscoped across tenants)
+  await prisma.user.upsert({
+    where: { email: "superadmin@nexusops.com" },
+    update: {
+      name: "Platform Super Admin",
+      role: Role.SUPER_ADMIN,
+      organizationId: null,
+      departmentId: null,
+      isActive: true,
+      passwordHash,
+    },
+    create: {
+      name: "Platform Super Admin",
+      email: "superadmin@nexusops.com",
+      passwordHash,
+      role: Role.SUPER_ADMIN,
+      organizationId: null,
+      departmentId: null,
+      isActive: true,
+    },
+  });
+
   // 1 Admin
   const admin = await prisma.user.upsert({
     where: { email: "admin@nexusops.com" },
     update: {
       name: "Admin User",
       role: Role.ADMIN,
+      organizationId: defaultOrg.id,
       departmentId: itDept.id,
       isActive: true,
       passwordHash,
@@ -54,6 +98,7 @@ async function main() {
       email: "admin@nexusops.com",
       passwordHash,
       role: Role.ADMIN,
+      organizationId: defaultOrg.id,
       departmentId: itDept.id,
       isActive: true,
     },
@@ -65,6 +110,7 @@ async function main() {
     update: {
       name: "IT Manager",
       role: Role.MANAGER,
+      organizationId: defaultOrg.id,
       departmentId: itDept.id,
       isActive: true,
       passwordHash,
@@ -74,6 +120,7 @@ async function main() {
       email: "manager.it@nexusops.com",
       passwordHash,
       role: Role.MANAGER,
+      organizationId: defaultOrg.id,
       departmentId: itDept.id,
       isActive: true,
     },
@@ -84,6 +131,7 @@ async function main() {
     update: {
       name: "HR Manager",
       role: Role.MANAGER,
+      organizationId: defaultOrg.id,
       departmentId: hrDept.id,
       isActive: true,
       passwordHash,
@@ -93,6 +141,7 @@ async function main() {
       email: "manager.hr@nexusops.com",
       passwordHash,
       role: Role.MANAGER,
+      organizationId: defaultOrg.id,
       departmentId: hrDept.id,
       isActive: true,
     },
@@ -104,6 +153,7 @@ async function main() {
     update: {
       name: "Main Manager",
       role: Role.MANAGER,
+      organizationId: defaultOrg.id,
       departmentId: itDept.id,
       isActive: true,
       passwordHash,
@@ -113,6 +163,7 @@ async function main() {
       email: "manager@nexusops.com",
       passwordHash,
       role: Role.MANAGER,
+      organizationId: defaultOrg.id,
       departmentId: itDept.id,
       isActive: true,
     },
@@ -152,12 +203,14 @@ async function main() {
     },
   ];
 
+  const seededEmployees = [];
   for (const emp of employeeData) {
-    await prisma.user.upsert({
+    const seededEmp = await prisma.user.upsert({
       where: { email: emp.email },
       update: {
         name: emp.name,
         role: Role.EMPLOYEE,
+        organizationId: defaultOrg.id,
         departmentId: emp.departmentId,
         managerId: emp.managerId,
         isActive: true,
@@ -168,19 +221,22 @@ async function main() {
         email: emp.email,
         passwordHash,
         role: Role.EMPLOYEE,
+        organizationId: defaultOrg.id,
         departmentId: emp.departmentId,
         managerId: emp.managerId,
         isActive: true,
       },
     });
+    seededEmployees.push(seededEmp);
   }
 
   // Backward compatibility alias for employee@nexusops.com
-  await prisma.user.upsert({
+  const defaultDemoEmployee = await prisma.user.upsert({
     where: { email: "employee@nexusops.com" },
     update: {
       name: "Demo Employee",
       role: Role.EMPLOYEE,
+      organizationId: defaultOrg.id,
       departmentId: itDept.id,
       managerId: managerIT.id,
       isActive: true,
@@ -191,6 +247,7 @@ async function main() {
       email: "employee@nexusops.com",
       passwordHash,
       role: Role.EMPLOYEE,
+      organizationId: defaultOrg.id,
       departmentId: itDept.id,
       managerId: managerIT.id,
       isActive: true,
@@ -248,7 +305,7 @@ async function main() {
 
   for (const flowData of flows) {
     const existing = await prisma.approvalFlow.findFirst({
-      where: { name: flowData.name },
+      where: { name: flowData.name, organizationId: defaultOrg.id },
       include: { steps: true },
     });
 
@@ -272,6 +329,7 @@ async function main() {
     } else {
       await prisma.approvalFlow.create({
         data: {
+          organizationId: defaultOrg.id,
           name: flowData.name,
           category: flowData.category,
           minAmount: flowData.minAmount,
@@ -335,7 +393,10 @@ async function main() {
 
     for (const log of sampleAuditLogs) {
       await prisma.auditLog.create({
-        data: log,
+        data: {
+          ...log,
+          organizationId: defaultOrg.id,
+        },
       });
     }
     console.log("✓ Sample Audit Logs seeded");
@@ -348,6 +409,7 @@ async function main() {
       update: {},
       create: {
         id: "announcement-seed-1",
+        organizationId: defaultOrg.id,
         title: "All-Hands Operations Briefing: Q4 Strategic Roadmaps",
         content: `### Welcome to NexusOps Q4 All-Hands\n\nPlease join executive leadership this Thursday at **3:00 PM IST**.\n\n- **Agenda:** Platform scaling, AI assistance, and department operational efficiency.\n- **Location:** Virtual Boardroom (Google Meet)\n\n> Please submit questions to your departmental manager by Wednesday evening.`,
         priority: "URGENT",
@@ -362,6 +424,7 @@ async function main() {
       update: {},
       create: {
         id: "announcement-seed-2",
+        organizationId: defaultOrg.id,
         title: "Scheduled Maintenance: Core Database Infrastructure",
         content: `The IT Department will perform scheduled routine database maintenance this Saturday between **01:00 AM and 03:00 AM IST**.\n\nSystems may experience brief read-only modes during failover testing.`,
         priority: "NORMAL",
@@ -377,6 +440,7 @@ async function main() {
       update: {},
       create: {
         id: "announcement-seed-3",
+        organizationId: defaultOrg.id,
         title: "New Annual Wellness & Leave Policy Updates",
         content: `HR has updated the employee benefits guide for the upcoming fiscal calendar. Review the full documentation under the **Knowledge Base** tab.`,
         priority: "NORMAL",
@@ -422,6 +486,7 @@ async function main() {
       update: {},
       create: {
         id: "asset-seed-1",
+        organizationId: defaultOrg.id,
         name: "MacBook Pro 16-inch M3 Pro",
         type: "LAPTOP",
         serialNumber: "MBP16-2024-001",
@@ -438,6 +503,7 @@ async function main() {
       update: {},
       create: {
         id: "asset-seed-2",
+        organizationId: defaultOrg.id,
         name: "Dell UltraSharp 27-inch 4K (U2723QE)",
         type: "MONITOR",
         serialNumber: "DELL-4K-99214",
@@ -454,6 +520,7 @@ async function main() {
       update: {},
       create: {
         id: "asset-seed-3",
+        organizationId: defaultOrg.id,
         name: "Lenovo ThinkPad X1 Carbon Gen 11",
         type: "LAPTOP",
         serialNumber: "LEN-X1C-44012",
@@ -470,6 +537,7 @@ async function main() {
       update: {},
       create: {
         id: "asset-seed-4",
+        organizationId: defaultOrg.id,
         name: "Apple iPhone 15 Pro (256GB Black Titanium)",
         type: "PHONE",
         serialNumber: "IPH15P-88129",
@@ -486,6 +554,7 @@ async function main() {
       update: {},
       create: {
         id: "asset-seed-5",
+        organizationId: defaultOrg.id,
         name: "JetBrains All Products Pack Enterprise License",
         type: "LICENSE",
         serialNumber: "JB-APP-2026-NEXUS",
@@ -502,6 +571,7 @@ async function main() {
       update: {},
       create: {
         id: "asset-seed-6",
+        organizationId: defaultOrg.id,
         name: "Logitech MX Master 3S Wireless Mouse",
         type: "ACCESSORY",
         serialNumber: "LOGI-MX3S-5512",
@@ -518,6 +588,7 @@ async function main() {
       update: {},
       create: {
         id: "asset-seed-7",
+        organizationId: defaultOrg.id,
         name: "Dell Latitude 5420 (Legacy)",
         type: "LAPTOP",
         serialNumber: "DELL-LAT-2019-88",
@@ -534,6 +605,7 @@ async function main() {
       update: {},
       create: {
         id: "asset-seed-8",
+        organizationId: defaultOrg.id,
         name: "Apple Magic Keyboard with Touch ID and Numeric Keypad",
         type: "ACCESSORY",
         serialNumber: "APL-KB-7712",
@@ -606,6 +678,7 @@ async function main() {
       update: {},
       create: {
         id: "policy-seed-1",
+        organizationId: defaultOrg.id,
         title: "Enterprise Information Security & Data Protection Policy",
         fileName: "info-security-policy-v1.pdf",
         filePath: "policies/info-security-policy-v1.pdf",
@@ -628,6 +701,7 @@ async function main() {
       update: {},
       create: {
         id: "policy-seed-2",
+        organizationId: defaultOrg.id,
         title: "Employee Travel & Expense Reimbursement Policy",
         fileName: "travel-expense-policy-v1.pdf",
         filePath: "policies/travel-expense-policy-v1.pdf",
@@ -650,6 +724,7 @@ async function main() {
       update: {},
       create: {
         id: "policy-seed-3",
+        organizationId: defaultOrg.id,
         title: "IT Infrastructure & Acceptable Use Policy",
         fileName: "it-acceptable-use-v1.pdf",
         filePath: "policies/it-acceptable-use-v1.pdf",
@@ -672,6 +747,7 @@ async function main() {
       update: {},
       create: {
         id: "policy-seed-4",
+        organizationId: defaultOrg.id,
         title: "Workplace Ethics & Code of Professional Conduct",
         fileName: "code-of-conduct-v1.pdf",
         filePath: "policies/code-of-conduct-v1.pdf",
@@ -744,13 +820,22 @@ async function main() {
 
     for (const h of sampleHolidays) {
       await prisma.holiday.upsert({
-        where: { date: h.date },
+        where: {
+          organizationId_date: {
+            organizationId: defaultOrg.id,
+            date: h.date,
+          },
+        },
         update: { name: h.name },
-        create: { name: h.name, date: h.date },
+        create: {
+          name: h.name,
+          date: h.date,
+          organizationId: defaultOrg.id,
+        },
       });
     }
 
-    const allUsers = [admin, managerIT, managerHR, employee1, employee2, employee3, demoEmployee].filter(Boolean);
+    const allUsers = [admin, managerIT, managerHR, ...seededEmployees, defaultDemoEmployee].filter(Boolean);
     for (const u of allUsers) {
       if (u?.id) {
         await prisma.leaveBalance.upsert({
@@ -763,6 +848,7 @@ async function main() {
           update: {},
           create: {
             userId: u.id,
+            organizationId: defaultOrg.id,
             year: currentYear,
             casualDays: 12,
             sickDays: 12,
@@ -785,6 +871,7 @@ async function main() {
       const schedule = await prisma.digestSchedule.upsert({
         where: { id: "sched-weekly-analytics-admin" },
         update: {
+          organizationId: defaultOrg.id,
           recipients: ["admin@nexusops.com", "operations-lead@nexusops.com"],
           dayOfWeek: 1, // Monday
           hour: 9,      // 09:00 AM IST
@@ -794,6 +881,7 @@ async function main() {
         },
         create: {
           id: "sched-weekly-analytics-admin",
+          organizationId: defaultOrg.id,
           recipients: ["admin@nexusops.com", "operations-lead@nexusops.com"],
           frequency: "WEEKLY",
           dayOfWeek: 1, // Monday
@@ -824,13 +912,17 @@ async function main() {
   // Seed Default CSAT Satisfaction Survey
   try {
     const existingDefaultSurvey = await prisma.survey.findFirst({
-      where: { title: "Request Fulfillment CSAT" },
+      where: {
+        title: "Request Fulfillment CSAT",
+        organizationId: defaultOrg.id,
+      },
     });
 
     if (!existingDefaultSurvey) {
       await prisma.survey.create({
         data: {
           id: "default-csat-survey",
+          organizationId: defaultOrg.id,
           title: "Request Fulfillment CSAT",
           isActive: true,
           targetRole: null,
@@ -871,6 +963,7 @@ async function main() {
       if (!existingDraft) {
         await prisma.expenseClaim.create({
           data: {
+            organizationId: defaultOrg.id,
             title: "Client Onsite Travel - Bengaluru",
             totalAmount: 435000, // ₹4,350.00
             status: "DRAFT",
@@ -899,11 +992,15 @@ async function main() {
 
       // 2. Paid Claim
       const existingPaid = await prisma.expenseClaim.findFirst({
-        where: { paymentReference: "PAY-2026-NEXUS-001" },
+        where: {
+          organizationId: defaultOrg.id,
+          paymentReference: "PAY-2026-NEXUS-001",
+        },
       });
       if (!existingPaid) {
         await prisma.expenseClaim.create({
           data: {
+            organizationId: defaultOrg.id,
             title: "Conference Registration & Travel",
             totalAmount: 1500000, // ₹15,000.00
             status: "PAID",
@@ -935,6 +1032,7 @@ async function main() {
       if (!existingApproved) {
         await prisma.expenseClaim.create({
           data: {
+            organizationId: defaultOrg.id,
             title: "Ergonomic Office Equipment",
             totalAmount: 650000, // ₹6,500.00
             status: "APPROVED",

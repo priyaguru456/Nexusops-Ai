@@ -355,6 +355,7 @@ describe("Directory Module Unit & Security Tests", () => {
           email: `${role.toLowerCase()}@nexusops.ai`,
           role,
           isActive: true,
+          organizationId: "00000000-0000-4000-8000-000000000001",
         } as any);
 
         const req = {

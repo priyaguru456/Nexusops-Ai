@@ -39,6 +39,16 @@ export default async function globalSetup() {
 
   console.log(`[GlobalSetup] Verified test database safety: ${parsedDbName}`);
 
+  let dbHost = "127.0.0.1";
+  let dbPort = 5432;
+  try {
+    const parsed = new URL(testDbUrl);
+    dbHost = parsed.hostname === "localhost" ? "127.0.0.1" : parsed.hostname || "127.0.0.1";
+    dbPort = Number(parsed.port) || 5432;
+  } catch {
+    // fallback to defaults
+  }
+
   // Quick TCP probe to check if database port is open before calling prisma
   const isPortOpen = await new Promise<boolean>((resolve) => {
     const net = require("net");
@@ -56,13 +66,13 @@ export default async function globalSetup() {
       socket.destroy();
       resolve(false);
     });
-    socket.connect(5432, "127.0.0.1");
+    socket.connect(dbPort, dbHost);
   });
 
   const isUnitTestOnly = process.env.npm_lifecycle_event === "test:unit" || process.env.SKIP_DB_MIGRATIONS === "true";
   if (!isPortOpen || isUnitTestOnly) {
     console.log(
-      `[GlobalSetup] ${isUnitTestOnly ? "Unit tests requested: skipping database migration." : "Database is not reachable on localhost:5432: skipping migration."}`
+      `[GlobalSetup] ${isUnitTestOnly ? "Unit tests requested: skipping database migration." : `Database is not reachable on ${dbHost}:${dbPort}: skipping migration.`}`
     );
     return;
   }

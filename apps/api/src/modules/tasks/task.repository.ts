@@ -44,6 +44,7 @@ export interface CreateTaskData {
   requestId?: string | null;
   assigneeId?: string | null;
   assignedById?: string | null;
+  organizationId: string;
 }
 
 export interface UpdateTaskData {
@@ -86,6 +87,7 @@ export class TaskRepository {
         requestId: data.requestId ?? null,
         assigneeId: data.assigneeId ?? null,
         assignedById: data.assignedById ?? null,
+        organizationId: data.organizationId,
       },
       include: taskDetailInclude,
     });

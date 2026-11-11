@@ -116,6 +116,7 @@ describe("Reprocess Route - RBAC & Controller Authorization", () => {
         email: "test@nexusops.ai",
         role: Role.ADMIN,
         isActive: true,
+        organizationId: "00000000-0000-4000-8000-000000000001",
       } as any);
 
       const req = {

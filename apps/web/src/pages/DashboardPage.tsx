@@ -83,8 +83,8 @@ export const DashboardPage: React.FC = () => {
     ).length;
   }, [userTasksData]);
 
-  // Real data: requests awaiting my approval (Manager / Admin only)
-  const canApprove = role === "MANAGER" || role === "ADMIN";
+  // Real data: requests awaiting my approval (Manager / Admin / Super Admin only)
+  const canApprove = role === "MANAGER" || role === "ADMIN" || role === "SUPER_ADMIN";
   const { data: pendingApprovalsData } = useQuery({
     queryKey: APPROVAL_KEYS.pending(),
     queryFn: () => approvalsApi.getPending(),
@@ -149,7 +149,9 @@ export const DashboardPage: React.FC = () => {
   };
 
   const scopeLabel =
-    role === "ADMIN"
+    role === "SUPER_ADMIN"
+      ? "Platform-Wide Multi-Tenant Operations"
+      : role === "ADMIN"
       ? "Company-Wide Operations"
       : role === "MANAGER"
       ? `${user?.department?.name || "Departmental"} Team Overview`
@@ -355,7 +357,7 @@ export const DashboardPage: React.FC = () => {
               </>
             )}
 
-            {role === "ADMIN" && (
+            {(role === "ADMIN" || role === "SUPER_ADMIN") && (
               <>
                 <StatCard
                   title="Company Requests"

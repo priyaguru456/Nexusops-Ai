@@ -6,7 +6,7 @@ export class ApprovalFlowController {
   async listFlows(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       if (!req.user) throw AppError.unauthorized();
-      const flows = await approvalFlowService.getFlows(req.query as any);
+      const flows = await approvalFlowService.getFlows(req.query as any, req.user);
       res.status(200).json({ flows });
     } catch (error) {
       next(error);
@@ -17,7 +17,7 @@ export class ApprovalFlowController {
     try {
       if (!req.user) throw AppError.unauthorized();
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      const flow = await approvalFlowService.getFlowById(id);
+      const flow = await approvalFlowService.getFlowById(id, req.user);
       res.status(200).json({ flow });
     } catch (error) {
       next(error);

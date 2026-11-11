@@ -4,31 +4,38 @@ import bcrypt from "bcryptjs";
 import { Role } from "@prisma/client";
 import { app } from "../src/app";
 import { prisma } from "../src/lib/prisma";
-import { signAccessToken } from "../src/lib/jwt";
+import { signAccessToken, hashToken } from "../src/lib/jwt";
+import { emailService } from "../src/lib/email.service";
 
 vi.mock("../src/lib/prisma", () => {
-  return {
-    prisma: {
-      user: {
-        findUnique: vi.fn(),
-        findFirst: vi.fn(),
-        create: vi.fn(),
-        findMany: vi.fn(),
-        count: vi.fn(),
-        update: vi.fn(),
-      },
-      refreshToken: {
-        create: vi.fn(),
-        findFirst: vi.fn(),
-        update: vi.fn(),
-        updateMany: vi.fn(),
-      },
-      auditLog: {
-        create: vi.fn(),
-      },
-      $queryRaw: vi.fn(),
+  const mockClient: any = {
+    $transaction: vi.fn(async (cb: any) => cb(mockClient)),
+    user: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
+      update: vi.fn(),
     },
+    refreshToken: {
+      create: vi.fn(),
+      findFirst: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    passwordResetToken: {
+      create: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    auditLog: {
+      create: vi.fn(),
+    },
+    $queryRaw: vi.fn(),
   };
+  return { prisma: mockClient };
 });
 
 describe("Auth Module Integration Tests", () => {
@@ -350,6 +357,136 @@ describe("Auth Module Integration Tests", () => {
 
       expect(blockedRes.status).toBe(429);
       expect(blockedRes.body.error).toContain("Too many login attempts");
+    });
+  });
+
+  describe("POST /api/auth/forgot-password & /api/auth/reset-password", () => {
+    it("returns generic 200 response for non-existent email without sending email", async () => {
+      emailService.clearSentEmails();
+      vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(null);
+
+      const res = await request(app)
+        .post("/api/auth/forgot-password")
+        .send({ email: "nobody@nexusops.com" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.message).toContain("If an account with that email exists");
+      expect(emailService.getSentEmails()).toHaveLength(0);
+    });
+
+    it("creates hashed reset token and sends reset link email for active user", async () => {
+      emailService.clearSentEmails();
+      const activeUser = {
+        id: "77777777-7777-7777-7777-777777777777",
+        name: "Reset User",
+        email: "reset@nexusops.com",
+        role: Role.EMPLOYEE,
+        isActive: true,
+        department: null,
+      };
+      vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(activeUser as any);
+      vi.mocked((prisma as any).passwordResetToken.updateMany).mockResolvedValueOnce({ count: 0 });
+      vi.mocked((prisma as any).passwordResetToken.create).mockResolvedValueOnce({ id: "prt-1" });
+      vi.mocked(prisma.auditLog.create).mockResolvedValueOnce({} as any);
+
+      const res = await request(app)
+        .post("/api/auth/forgot-password")
+        .send({ email: "reset@nexusops.com" });
+
+      expect(res.status).toBe(200);
+      expect((prisma as any).passwordResetToken.create).toHaveBeenCalledTimes(1);
+      const sent = emailService.getSentEmails();
+      expect(sent).toHaveLength(1);
+      expect(sent[0].to).toEqual(["reset@nexusops.com"]);
+      expect(sent[0].html).toContain("/reset-password?token=");
+    });
+
+    it("resets password, marks token used, and revokes all refresh tokens", async () => {
+      const rawToken = "valid-raw-reset-token-123";
+      const tokenHash = hashToken(rawToken);
+      const userId = "88888888-8888-8888-8888-888888888888";
+
+      vi.mocked((prisma as any).passwordResetToken.findUnique).mockResolvedValueOnce({
+        id: "prt-valid",
+        userId,
+        tokenHash,
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+        usedAt: null,
+        user: { id: userId, email: "reset2@nexusops.com", isActive: true },
+      });
+      vi.mocked((prisma as any).passwordResetToken.updateMany).mockResolvedValueOnce({ count: 1 });
+      vi.mocked(prisma.user.update).mockResolvedValueOnce({ id: userId } as any);
+      vi.mocked(prisma.refreshToken.updateMany).mockResolvedValueOnce({ count: 2 });
+      vi.mocked(prisma.auditLog.create).mockResolvedValueOnce({} as any);
+
+      const res = await request(app)
+        .post("/api/auth/reset-password")
+        .send({ token: rawToken, newPassword: "NewStrongPassword123!" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.message).toContain("reset successfully");
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: userId },
+          data: expect.objectContaining({ passwordHash: expect.any(String) }),
+        })
+      );
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId, revoked: false },
+        data: { revoked: true },
+      });
+    });
+
+    it("rejects expired or already-used reset tokens with 400", async () => {
+      vi.mocked((prisma as any).passwordResetToken.findUnique).mockResolvedValueOnce({
+        id: "prt-expired",
+        userId: "u-1",
+        tokenHash: hashToken("expired-token"),
+        expiresAt: new Date(Date.now() - 1000),
+        usedAt: null,
+        user: { id: "u-1", email: "x@nexusops.com", isActive: true },
+      });
+
+      const expiredRes = await request(app)
+        .post("/api/auth/reset-password")
+        .send({ token: "expired-token", newPassword: "NewStrongPassword123!" });
+
+      expect(expiredRes.status).toBe(400);
+
+      vi.mocked((prisma as any).passwordResetToken.findUnique).mockResolvedValueOnce({
+        id: "prt-used",
+        userId: "u-1",
+        tokenHash: hashToken("used-token"),
+        expiresAt: new Date(Date.now() + 60000),
+        usedAt: new Date(),
+        user: { id: "u-1", email: "x@nexusops.com", isActive: true },
+      });
+
+      const usedRes = await request(app)
+        .post("/api/auth/reset-password")
+        .send({ token: "used-token", newPassword: "NewStrongPassword123!" });
+
+      expect(usedRes.status).toBe(400);
+    });
+
+    it("rate limits /api/auth/forgot-password after 5 attempts", async () => {
+      vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
+      const email = "rl-forgot@nexusops.com";
+
+      for (let i = 0; i < 5; i++) {
+        const res = await request(app)
+          .post("/api/auth/forgot-password")
+          .set("x-test-rate-limit", "true")
+          .send({ email });
+        expect(res.status).toBe(200);
+      }
+
+      const blocked = await request(app)
+        .post("/api/auth/forgot-password")
+        .set("x-test-rate-limit", "true")
+        .send({ email });
+
+      expect(blocked.status).toBe(429);
     });
   });
 });

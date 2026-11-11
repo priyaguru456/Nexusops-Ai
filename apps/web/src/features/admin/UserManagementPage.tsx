@@ -14,6 +14,7 @@ import type { Role, User } from "../../types/auth";
 
 export function UserManagementPage(): React.JSX.Element {
   const { user: currentUser } = useAuth();
+  const isSuperAdmin = currentUser?.role === "SUPER_ADMIN";
   const { success: toastSuccess, error: toastError } = useToast();
 
   // Filters & Pagination state
@@ -98,6 +99,7 @@ export function UserManagementPage(): React.JSX.Element {
 
   const roleBadgeVariant = (role: Role) => {
     switch (role) {
+      case "SUPER_ADMIN":
       case "ADMIN":
         return "destructive";
       case "MANAGER":
@@ -284,6 +286,7 @@ export function UserManagementPage(): React.JSX.Element {
             aria-label="Filter by role"
           >
             <option value="ALL">All Roles</option>
+            {isSuperAdmin && <option value="SUPER_ADMIN">Super Admin</option>}
             <option value="ADMIN">Admin</option>
             <option value="MANAGER">Manager</option>
             <option value="EMPLOYEE">Employee</option>
@@ -383,6 +386,9 @@ export function UserManagementPage(): React.JSX.Element {
               <option value="EMPLOYEE">Employee - Standard access to requests and tasks</option>
               <option value="MANAGER">Manager - Team requests, task assignments, and department approvals</option>
               <option value="ADMIN">Admin - Full company-wide governance, settings, and logs</option>
+              {isSuperAdmin && (
+                <option value="SUPER_ADMIN">Super Admin - Platform-wide multi-tenant governance</option>
+              )}
             </select>
           </div>
 

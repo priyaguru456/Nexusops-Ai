@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma";
+import { DEFAULT_ORGANIZATION_ID, isAdminRole } from "../../lib/tenant";
 import { AssetStatus, AssetType, Prisma } from "@prisma/client";
 import { AppError } from "../../lib/errors";
 import type {
@@ -42,10 +43,17 @@ const ASSET_INCLUDE_FULL = {
 };
 
 export class AssetRepository {
-  async create(data: CreateAssetInput) {
+  async create(data: CreateAssetInput & { organizationId?: string }) {
+    const organizationId = data.organizationId ?? DEFAULT_ORGANIZATION_ID;
+
     if (data.serialNumber) {
       const existing = await prisma.asset.findUnique({
-        where: { serialNumber: data.serialNumber },
+        where: {
+          organizationId_serialNumber: {
+            organizationId,
+            serialNumber: data.serialNumber,
+          },
+        },
       });
       if (existing) {
         throw AppError.badRequest(`An asset with serial number '${data.serialNumber}' already exists`);
@@ -54,6 +62,7 @@ export class AssetRepository {
 
     return prisma.asset.create({
       data: {
+        organizationId,
         name: data.name,
         type: data.type,
         serialNumber: data.serialNumber || null,
@@ -66,7 +75,7 @@ export class AssetRepository {
     });
   }
 
-  async update(id: string, data: UpdateAssetInput) {
+  async update(id: string, data: UpdateAssetInput, organizationId?: string) {
     const existing = await prisma.asset.findUnique({
       where: { id },
       include: {
@@ -80,9 +89,18 @@ export class AssetRepository {
       throw AppError.notFound("Asset not found");
     }
 
+    if (organizationId && existing.organizationId !== organizationId) {
+      throw AppError.notFound("Asset not found");
+    }
+
     if (data.serialNumber && data.serialNumber !== existing.serialNumber) {
       const conflict = await prisma.asset.findUnique({
-        where: { serialNumber: data.serialNumber },
+        where: {
+          organizationId_serialNumber: {
+            organizationId: existing.organizationId,
+            serialNumber: data.serialNumber,
+          },
+        },
       });
       if (conflict && conflict.id !== id) {
         throw AppError.badRequest(`An asset with serial number '${data.serialNumber}' already exists`);
@@ -116,9 +134,10 @@ export class AssetRepository {
     });
   }
 
-  async findMyAssets(userId: string) {
+  async findMyAssets(userId: string, organizationId?: string) {
     return prisma.asset.findMany({
       where: {
+        ...(organizationId ? { organizationId } : {}),
         status: AssetStatus.ASSIGNED,
         assignments: {
           some: {
@@ -135,15 +154,20 @@ export class AssetRepository {
   async findVisibleAssets(
     query: GetAssetsQueryInput,
     userRole: string,
-    userId: string
+    userId: string,
+    organizationId?: string
   ) {
     const now = new Date();
     const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
     const andConditions: Prisma.AssetWhereInput[] = [];
 
+    if (organizationId) {
+      andConditions.push({ organizationId });
+    }
+
     // Role-based scoping: Employees & Managers can ONLY view their own currently assigned assets
-    if (userRole !== "ADMIN") {
+    if (!isAdminRole(userRole)) {
       andConditions.push({
         status: AssetStatus.ASSIGNED,
         assignments: {
@@ -264,7 +288,8 @@ export class AssetRepository {
     targetUserId: string,
     assignedById: string,
     requestId?: string | null,
-    notes?: string | null
+    notes?: string | null,
+    organizationId?: string
   ) {
     return prisma.$transaction(async (tx) => {
       const asset = await tx.asset.findUnique({
@@ -277,6 +302,10 @@ export class AssetRepository {
       });
 
       if (!asset) {
+        throw AppError.notFound("Asset not found");
+      }
+
+      if (organizationId && asset.organizationId !== organizationId) {
         throw AppError.notFound("Asset not found");
       }
 
@@ -300,6 +329,10 @@ export class AssetRepository {
         throw AppError.notFound("Target assignee user not found");
       }
 
+      if (targetUser.organizationId !== asset.organizationId) {
+        throw AppError.forbidden("Cannot assign an asset to a user from another organization");
+      }
+
       if (!targetUser.isActive) {
         throw AppError.badRequest("Cannot assign an asset to a deactivated user account");
       }
@@ -308,7 +341,7 @@ export class AssetRepository {
         const request = await tx.workRequest.findUnique({
           where: { id: requestId },
         });
-        if (!request) {
+        if (!request || request.organizationId !== asset.organizationId) {
           throw AppError.notFound("Referenced work request not found");
         }
       }
@@ -347,7 +380,7 @@ export class AssetRepository {
    * - Asset must be ASSIGNED.
    * - Atomically marks active AssetAssignment returnedAt and sets asset status to AVAILABLE.
    */
-  async returnAssetTransaction(assetId: string, notes?: string | null) {
+  async returnAssetTransaction(assetId: string, notes?: string | null, organizationId?: string) {
     return prisma.$transaction(async (tx) => {
       const asset = await tx.asset.findUnique({
         where: { id: assetId },
@@ -359,7 +392,7 @@ export class AssetRepository {
         },
       });
 
-      if (!asset) {
+      if (!asset || (organizationId && asset.organizationId !== organizationId)) {
         throw AppError.notFound("Asset not found");
       }
 
@@ -397,7 +430,7 @@ export class AssetRepository {
    * Guarantees:
    * - Asset cannot be currently assigned.
    */
-  async retireAssetTransaction(assetId: string, notes?: string | null) {
+  async retireAssetTransaction(assetId: string, notes?: string | null, organizationId?: string) {
     return prisma.$transaction(async (tx) => {
       const asset = await tx.asset.findUnique({
         where: { id: assetId },
@@ -408,7 +441,7 @@ export class AssetRepository {
         },
       });
 
-      if (!asset) {
+      if (!asset || (organizationId && asset.organizationId !== organizationId)) {
         throw AppError.notFound("Asset not found");
       }
 

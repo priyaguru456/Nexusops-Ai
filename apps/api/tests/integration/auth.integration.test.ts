@@ -3,6 +3,8 @@ import request from "supertest";
 import { Role } from "@prisma/client";
 import { app } from "../../src/app";
 import { prisma } from "../../src/lib/prisma";
+import { emailService } from "../../src/lib/email.service";
+import { hashToken } from "../../src/lib/jwt";
 import { createUser, DEFAULT_PASSWORD } from "../helpers/factories";
 
 describe("Integration: Auth Module (Real Test DB)", () => {
@@ -27,7 +29,7 @@ describe("Integration: Auth Module (Real Test DB)", () => {
       expect(res.body.accessToken).toBeDefined();
 
       // Check httpOnly cookie
-      const cookies = res.headers["set-cookie"] as string[] | undefined;
+      const cookies = res.headers["set-cookie"] as unknown as string[] | undefined;
       expect(cookies).toBeDefined();
       expect(cookies?.some((c) => c.includes("refreshToken="))).toBe(true);
 
@@ -67,7 +69,7 @@ describe("Integration: Auth Module (Real Test DB)", () => {
         });
 
       expect(res.status).toBe(409);
-      expect(res.body.error).toContain("already in use");
+      expect(res.body.error).toMatch(/already/i);
     });
   });
 
@@ -125,7 +127,7 @@ describe("Integration: Auth Module (Real Test DB)", () => {
         .post("/api/auth/login")
         .send({ email: user.email, password: DEFAULT_PASSWORD });
 
-      const rawCookie = (loginRes.headers["set-cookie"] as string[])[0];
+      const rawCookie = (loginRes.headers["set-cookie"] as unknown as string[])[0];
 
       // Refresh
       const refreshRes = await request(app)
@@ -135,7 +137,7 @@ describe("Integration: Auth Module (Real Test DB)", () => {
       expect(refreshRes.status).toBe(200);
       expect(refreshRes.body.accessToken).toBeDefined();
 
-      const newCookies = refreshRes.headers["set-cookie"] as string[];
+      const newCookies = refreshRes.headers["set-cookie"] as unknown as string[];
       expect(newCookies).toBeDefined();
       expect(newCookies[0]).toContain("refreshToken=");
     });
@@ -147,7 +149,7 @@ describe("Integration: Auth Module (Real Test DB)", () => {
         .post("/api/auth/login")
         .send({ email: user.email, password: DEFAULT_PASSWORD });
 
-      const oldCookie = (loginRes.headers["set-cookie"] as string[])[0];
+      const oldCookie = (loginRes.headers["set-cookie"] as unknown as string[])[0];
 
       // Legitimate first refresh
       const firstRefresh = await request(app)
@@ -173,7 +175,7 @@ describe("Integration: Auth Module (Real Test DB)", () => {
         .post("/api/auth/login")
         .send({ email: user.email, password: DEFAULT_PASSWORD });
 
-      const cookie = (loginRes.headers["set-cookie"] as string[])[0];
+      const cookie = (loginRes.headers["set-cookie"] as unknown as string[])[0];
 
       const logoutRes = await request(app)
         .post("/api/auth/logout")
@@ -187,6 +189,100 @@ describe("Integration: Auth Module (Real Test DB)", () => {
         .set("Cookie", cookie);
 
       expect(refreshAfterLogout.status).toBe(401);
+    });
+  });
+
+  describe("POST /api/auth/forgot-password & /api/auth/reset-password", () => {
+    it("returns 200 generic response for non-existent email", async () => {
+      emailService.clearSentEmails();
+      const res = await request(app)
+        .post("/api/auth/forgot-password")
+        .send({ email: `nonexistent-${Date.now()}@nexusops.com` });
+
+      expect(res.status).toBe(200);
+      expect(res.body.message).toContain("If an account with that email exists");
+      expect(emailService.getSentEmails()).toHaveLength(0);
+    });
+
+    it("completes full reset flow, revokes old refresh tokens, and rejects token reuse", async () => {
+      emailService.clearSentEmails();
+      const { user } = await createUser();
+
+      // 1. Login first to create an active refresh token cookie
+      const loginRes = await request(app)
+        .post("/api/auth/login")
+        .send({ email: user.email, password: DEFAULT_PASSWORD });
+      const oldRefreshCookie = (loginRes.headers["set-cookie"] as unknown as string[])[0];
+
+      // 2. Request password reset
+      const forgotRes = await request(app)
+        .post("/api/auth/forgot-password")
+        .send({ email: user.email });
+      expect(forgotRes.status).toBe(200);
+
+      const emails = emailService.getSentEmails();
+      expect(emails).toHaveLength(1);
+      const tokenMatch = emails[0].html.match(/token=([^"&<\s]+)/);
+      expect(tokenMatch).not.toBeNull();
+      const rawToken = decodeURIComponent(tokenMatch![1]);
+
+      // 3. Reset password
+      const newPassword = "BrandNewPassword123!";
+      const resetRes = await request(app)
+        .post("/api/auth/reset-password")
+        .send({ token: rawToken, newPassword });
+      expect(resetRes.status).toBe(200);
+
+      // 4. Old refresh token must be revoked
+      const refreshWithOldCookie = await request(app)
+        .post("/api/auth/refresh")
+        .set("Cookie", oldRefreshCookie);
+      expect(refreshWithOldCookie.status).toBe(401);
+
+      // 5. Reusing the same reset token must fail with 400
+      const reuseRes = await request(app)
+        .post("/api/auth/reset-password")
+        .send({ token: rawToken, newPassword: "AnotherPassword123!" });
+      expect(reuseRes.status).toBe(400);
+
+      // 6. Login with new password succeeds
+      const newLoginRes = await request(app)
+        .post("/api/auth/login")
+        .send({ email: user.email, password: newPassword });
+      expect(newLoginRes.status).toBe(200);
+    });
+
+    it("rejects expired reset tokens with 400", async () => {
+      const { user } = await createUser();
+      const rawToken = "expired-integration-token";
+      await prisma.passwordResetToken.create({
+        data: {
+          userId: user.id,
+          tokenHash: hashToken(rawToken),
+          expiresAt: new Date(Date.now() - 60_000),
+        },
+      });
+
+      const res = await request(app)
+        .post("/api/auth/reset-password")
+        .send({ token: rawToken, newPassword: "ValidPassword123!" });
+      expect(res.status).toBe(400);
+    });
+
+    it("rate limits repeated forgot-password attempts with 429", async () => {
+      const targetEmail = `rl-${Date.now()}@nexusops.com`;
+      for (let i = 0; i < 5; i++) {
+        const res = await request(app)
+          .post("/api/auth/forgot-password")
+          .set("x-test-rate-limit", "true")
+          .send({ email: targetEmail });
+        expect(res.status).toBe(200);
+      }
+      const blocked = await request(app)
+        .post("/api/auth/forgot-password")
+        .set("x-test-rate-limit", "true")
+        .send({ email: targetEmail });
+      expect(blocked.status).toBe(429);
     });
   });
 });

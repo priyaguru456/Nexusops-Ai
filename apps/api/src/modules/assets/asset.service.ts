@@ -2,6 +2,7 @@ import { assetRepository } from "./asset.repository";
 import { auditService } from "../audit/audit.service";
 import { notificationService } from "../notifications/notification.service";
 import { AppError } from "../../lib/errors";
+import { assertSameTenant, isAdminRole, isSuperAdmin, resolveTenantId } from "../../lib/tenant";
 import type { AuthenticatedUser } from "../../types/express";
 import type {
   CreateAssetInput,
@@ -12,13 +13,25 @@ import type {
   GetAssetsQueryInput,
 } from "./asset.schema";
 
+function resolveOptionalAssetOrgId(user: AuthenticatedUser): string | undefined {
+  if (user.organizationId === undefined) return undefined;
+  if (isSuperAdmin(user) && !user.organizationId) return undefined;
+  return resolveTenantId(user);
+}
+
 export class AssetService {
   async list(user: AuthenticatedUser, query: GetAssetsQueryInput) {
-    return assetRepository.findVisibleAssets(query, user.role, user.id);
+    const orgId = resolveOptionalAssetOrgId(user);
+    return orgId !== undefined
+      ? assetRepository.findVisibleAssets(query, user.role, user.id, orgId)
+      : assetRepository.findVisibleAssets(query, user.role, user.id);
   }
 
   async getMyAssets(user: AuthenticatedUser) {
-    return assetRepository.findMyAssets(user.id);
+    const orgId = resolveOptionalAssetOrgId(user);
+    return orgId !== undefined
+      ? assetRepository.findMyAssets(user.id, orgId)
+      : assetRepository.findMyAssets(user.id);
   }
 
   async getById(id: string, user: AuthenticatedUser) {
@@ -27,8 +40,10 @@ export class AssetService {
       throw AppError.notFound("Asset not found");
     }
 
+    assertSameTenant(asset.organizationId, user, "Asset not found");
+
     // Role-based authorization: Employees/Managers can ONLY view their own assigned asset
-    if (user.role !== "ADMIN") {
+    if (!isAdminRole(user)) {
       const activeAssignment = asset.assignments.find((a) => a.returnedAt === null);
       if (!activeAssignment || activeAssignment.userId !== user.id) {
         throw AppError.forbidden("You do not have permission to view this asset");
@@ -39,13 +54,17 @@ export class AssetService {
   }
 
   async create(user: AuthenticatedUser, data: CreateAssetInput) {
-    if (user.role !== "ADMIN") {
+    if (!isAdminRole(user)) {
       throw AppError.forbidden("Only administrators and IT staff can create assets");
     }
 
-    const created = await assetRepository.create(data);
+    const orgId = user.organizationId !== undefined ? resolveTenantId(user) : undefined;
+    const created = await assetRepository.create(
+      orgId !== undefined ? { ...data, organizationId: orgId } : data
+    );
 
     await auditService.log({
+      organizationId: created.organizationId ?? orgId ?? null,
       actorId: user.id,
       action: "ASSET_CREATED",
       entityType: "Asset",
@@ -62,13 +81,17 @@ export class AssetService {
   }
 
   async update(id: string, user: AuthenticatedUser, data: UpdateAssetInput) {
-    if (user.role !== "ADMIN") {
+    if (!isAdminRole(user)) {
       throw AppError.forbidden("Only administrators and IT staff can update assets");
     }
 
-    const updated = await assetRepository.update(id, data);
+    const orgId = resolveOptionalAssetOrgId(user);
+    const updated = await (orgId !== undefined
+      ? assetRepository.update(id, data, orgId)
+      : assetRepository.update(id, data));
 
     await auditService.log({
+      organizationId: updated.organizationId ?? orgId ?? null,
       actorId: user.id,
       action: "ASSET_UPDATED",
       entityType: "Asset",
@@ -84,20 +107,31 @@ export class AssetService {
   }
 
   async assign(id: string, user: AuthenticatedUser, data: AssignAssetInput) {
-    if (user.role !== "ADMIN") {
+    if (!isAdminRole(user)) {
       throw AppError.forbidden("Only administrators and IT staff can assign assets");
     }
 
-    const result = await assetRepository.assignAssetTransaction(
-      id,
-      data.userId,
-      user.id,
-      data.requestId,
-      data.notes
-    );
+    const orgId = resolveOptionalAssetOrgId(user);
+    const result = await (orgId !== undefined
+      ? assetRepository.assignAssetTransaction(
+          id,
+          data.userId,
+          user.id,
+          data.requestId,
+          data.notes,
+          orgId
+        )
+      : assetRepository.assignAssetTransaction(
+          id,
+          data.userId,
+          user.id,
+          data.requestId,
+          data.notes
+        ));
 
     // Write audit log
     await auditService.log({
+      organizationId: result.asset.organizationId ?? orgId ?? null,
       actorId: user.id,
       action: "ASSET_ASSIGNED",
       entityType: "Asset",
@@ -126,14 +160,18 @@ export class AssetService {
   }
 
   async returnAsset(id: string, user: AuthenticatedUser, data: ReturnAssetInput) {
-    if (user.role !== "ADMIN") {
+    if (!isAdminRole(user)) {
       throw AppError.forbidden("Only administrators and IT staff can process asset returns");
     }
 
-    const result = await assetRepository.returnAssetTransaction(id, data.notes);
+    const orgId = resolveOptionalAssetOrgId(user);
+    const result = await (orgId !== undefined
+      ? assetRepository.returnAssetTransaction(id, data.notes, orgId)
+      : assetRepository.returnAssetTransaction(id, data.notes));
 
     // Write audit log
     await auditService.log({
+      organizationId: result.asset.organizationId ?? orgId ?? null,
       actorId: user.id,
       action: "ASSET_RETURNED",
       entityType: "Asset",
@@ -160,13 +198,17 @@ export class AssetService {
   }
 
   async retire(id: string, user: AuthenticatedUser, data: RetireAssetInput) {
-    if (user.role !== "ADMIN") {
+    if (!isAdminRole(user)) {
       throw AppError.forbidden("Only administrators and IT staff can retire assets");
     }
 
-    const result = await assetRepository.retireAssetTransaction(id, data.notes);
+    const orgId = resolveOptionalAssetOrgId(user);
+    const result = await (orgId !== undefined
+      ? assetRepository.retireAssetTransaction(id, data.notes, orgId)
+      : assetRepository.retireAssetTransaction(id, data.notes));
 
     await auditService.log({
+      organizationId: result.asset.organizationId ?? orgId ?? null,
       actorId: user.id,
       action: "ASSET_RETIRED",
       entityType: "Asset",

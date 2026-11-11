@@ -1,5 +1,12 @@
 import { prisma } from "../../lib/prisma";
 import {
+  assertSameTenant,
+  DEFAULT_ORGANIZATION_ID,
+  isAdminRole,
+  isSuperAdmin,
+  resolveTenantId,
+} from "../../lib/tenant";
+import {
   Role,
   LeaveType,
   LeaveStatus,
@@ -27,6 +34,12 @@ import type {
   UpdateHolidayInput,
 } from "./leave.schema";
 
+function resolveOptionalLeaveOrgId(user: AuthenticatedUser): string | undefined {
+  if (user.organizationId === undefined) return undefined;
+  if (isSuperAdmin(user) && !user.organizationId) return undefined;
+  return resolveTenantId(user);
+}
+
 export class LeaveService {
   /**
    * Retrieves or automatically initializes the annual leave balance for a user.
@@ -34,7 +47,8 @@ export class LeaveService {
   async getOrCreateBalance(
     userId: string,
     year: number,
-    tx?: Prisma.TransactionClient
+    tx?: Prisma.TransactionClient,
+    organizationId: string = DEFAULT_ORGANIZATION_ID
   ): Promise<LeaveBalance> {
     const existing = await leaveRepository.findBalance(userId, year, tx);
     if (existing) {
@@ -43,6 +57,7 @@ export class LeaveService {
 
     return leaveRepository.createBalance(
       {
+        organizationId,
         userId,
         year,
         casualDays: LEAVE_CONFIG.DEFAULT_ALLOWANCES.casualDays,
@@ -66,6 +81,8 @@ export class LeaveService {
   ) {
     const startDate = normalizeDateToUTC(input.startDate);
     const endDate = normalizeDateToUTC(input.endDate);
+    const orgId =
+      user.organizationId !== undefined ? resolveTenantId(user) : DEFAULT_ORGANIZATION_ID;
 
     // 1. Rule: start date must not be after end date
     if (startDate.getTime() > endDate.getTime()) {
@@ -80,7 +97,9 @@ export class LeaveService {
     }
 
     // 3. Rule: count working days excluding weekends and company holidays
-    const holidays = await leaveRepository.findHolidaysBetween(startDate, endDate);
+    const holidays = await (user.organizationId !== undefined
+      ? leaveRepository.findHolidaysBetween(startDate, endDate, undefined, orgId)
+      : leaveRepository.findHolidaysBetween(startDate, endDate));
     const holidayDateKeys = new Set(holidays.map((h) => formatDateKeyUTC(h.date)));
     const daysCount = calculateWorkingDays(startDate, endDate, holidayDateKeys);
 
@@ -104,7 +123,7 @@ export class LeaveService {
 
     // 5. Rule: check sufficient balance (UNPAID is exempt)
     const leaveYear = startDate.getUTCFullYear();
-    const balance = await this.getOrCreateBalance(user.id, leaveYear);
+    const balance = await this.getOrCreateBalance(user.id, leaveYear, undefined, orgId);
 
     if (input.type === LeaveType.CASUAL) {
       const remainingCasual = balance.casualDays - balance.usedCasual;
@@ -133,6 +152,7 @@ export class LeaveService {
     return prisma.$transaction(async (tx) => {
       const leave = await leaveRepository.createLeaveRequest(
         {
+          organizationId: orgId,
           userId: user.id,
           type: input.type,
           startDate,
@@ -175,6 +195,7 @@ export class LeaveService {
           entityId: leave.id,
           title: `Leave Request: ${leave.type} (${leave.daysCount} days)`,
           requesterId: user.id,
+          organizationId: orgId,
           steps: [
             {
               stepOrder: 1,
@@ -189,6 +210,7 @@ export class LeaveService {
 
       // Audit log
       await auditService.log({
+        organizationId: user.organizationId !== undefined ? orgId : null,
         actorId: user.id,
         action: "LEAVE_SUBMITTED",
         entityType: "Leave",
@@ -224,6 +246,8 @@ export class LeaveService {
         throw AppError.notFound("Leave request not found");
       }
 
+      assertSameTenant(leave.organizationId, approver, "Leave request not found");
+
       if (leave.status !== LeaveStatus.PENDING) {
         throw AppError.conflict(
           `Leave request has already been decided with status: ${leave.status}`
@@ -237,7 +261,7 @@ export class LeaveService {
 
       // Permission check: approver must be Admin or the employee's direct manager
       const isDirectManager = leave.user.managerId === approver.id;
-      const isAdmin = approver.role === Role.ADMIN;
+      const isAdmin = isAdminRole(approver);
 
       if (!isAdmin && !isDirectManager) {
         throw AppError.forbidden("You are not authorized to approve this leave request");
@@ -246,7 +270,12 @@ export class LeaveService {
       // Deduct balance (UNPAID is exempt)
       if (leave.type !== LeaveType.UNPAID) {
         const year = leave.startDate.getUTCFullYear();
-        const balance = await this.getOrCreateBalance(leave.userId, year, tx);
+        const balance = await this.getOrCreateBalance(
+          leave.userId,
+          year,
+          tx,
+          leave.organizationId ?? DEFAULT_ORGANIZATION_ID
+        );
 
         const updateData: Prisma.LeaveBalanceUpdateInput = {};
         if (leave.type === LeaveType.CASUAL) {
@@ -323,6 +352,7 @@ export class LeaveService {
 
       // Record audit log
       await auditService.log({
+        organizationId: leave.organizationId ?? null,
         actorId: approver.id,
         action: "LEAVE_APPROVED",
         entityType: "Leave",
@@ -362,6 +392,8 @@ export class LeaveService {
         throw AppError.notFound("Leave request not found");
       }
 
+      assertSameTenant(leave.organizationId, approver, "Leave request not found");
+
       if (leave.status !== LeaveStatus.PENDING) {
         throw AppError.conflict(
           `Leave request has already been decided with status: ${leave.status}`
@@ -373,7 +405,7 @@ export class LeaveService {
       }
 
       const isDirectManager = leave.user.managerId === approver.id;
-      const isAdmin = approver.role === Role.ADMIN;
+      const isAdmin = isAdminRole(approver);
 
       if (!isAdmin && !isDirectManager) {
         throw AppError.forbidden("You are not authorized to reject this leave request");
@@ -421,6 +453,7 @@ export class LeaveService {
       );
 
       await auditService.log({
+        organizationId: leave.organizationId ?? null,
         actorId: approver.id,
         action: "LEAVE_REJECTED",
         entityType: "Leave",
@@ -460,6 +493,8 @@ export class LeaveService {
         throw AppError.notFound("Leave request not found");
       }
 
+      assertSameTenant(leave.organizationId, user, "Leave request not found");
+
       if (
         leave.status === LeaveStatus.CANCELLED ||
         leave.status === LeaveStatus.REJECTED
@@ -471,7 +506,7 @@ export class LeaveService {
 
       const isOwner = leave.userId === user.id;
       const isDirectManager = leave.user.managerId === user.id;
-      const isAdmin = user.role === Role.ADMIN;
+      const isAdmin = isAdminRole(user);
 
       if (!isOwner && !isDirectManager && !isAdmin) {
         throw AppError.forbidden("You are not authorized to cancel this leave request");
@@ -482,7 +517,12 @@ export class LeaveService {
       // Restore balance if cancelled after approval (UNPAID is exempt)
       if (wasApproved && leave.type !== LeaveType.UNPAID) {
         const year = leave.startDate.getUTCFullYear();
-        const balance = await this.getOrCreateBalance(leave.userId, year, tx);
+        const balance = await this.getOrCreateBalance(
+          leave.userId,
+          year,
+          tx,
+          leave.organizationId ?? DEFAULT_ORGANIZATION_ID
+        );
 
         const updateData: Prisma.LeaveBalanceUpdateInput = {};
         if (leave.type === LeaveType.CASUAL) {
@@ -543,6 +583,7 @@ export class LeaveService {
 
       // Record audit log
       await auditService.log({
+        organizationId: leave.organizationId ?? null,
         actorId: user.id,
         action: "LEAVE_CANCELLED",
         entityType: "Leave",
@@ -569,9 +610,11 @@ export class LeaveService {
       throw AppError.notFound("Leave request not found");
     }
 
+    assertSameTenant(leave.organizationId, user, "Leave request not found");
+
     const isOwner = leave.userId === user.id;
     const isDirectManager = leave.user.managerId === user.id;
-    const isAdmin = user.role === Role.ADMIN;
+    const isAdmin = isAdminRole(user);
 
     if (!isOwner && !isDirectManager && !isAdmin) {
       throw AppError.forbidden("You do not have access to view this leave request");
@@ -584,6 +627,7 @@ export class LeaveService {
    * Lists leave requests with role-based scoping and pagination.
    */
   async listLeaves(query: ListLeavesQuery, user: AuthenticatedUser) {
+    const orgId = resolveOptionalLeaveOrgId(user);
     let scopedUserId = query.userId;
     let scopedUserIds: string[] | undefined = undefined;
 
@@ -596,12 +640,12 @@ export class LeaveService {
     } else if (user.role === Role.MANAGER) {
       if (query.userId) {
         if (query.userId !== user.id) {
-          // Check if target user is a direct report
+          // Check if target user is a direct report in same organization
           const target = await prisma.user.findUnique({
             where: { id: query.userId },
-            select: { managerId: true },
+            select: { managerId: true, organizationId: true },
           });
-          if (target?.managerId !== user.id) {
+          if (target?.managerId !== user.id || (orgId && target?.organizationId && target.organizationId !== orgId)) {
             throw AppError.forbidden("Managers can only view leaves of their direct reports or themselves");
           }
         }
@@ -609,13 +653,17 @@ export class LeaveService {
       } else {
         // Find all direct reports
         const reports = await prisma.user.findMany({
-          where: { managerId: user.id, isActive: true },
+          where: {
+            managerId: user.id,
+            isActive: true,
+            ...(orgId ? { organizationId: orgId } : {}),
+          },
           select: { id: true },
         });
         scopedUserIds = [user.id, ...reports.map((r) => r.id)];
       }
-    } else if (user.role === Role.ADMIN) {
-      // Admin can filter by any userId or view all
+    } else if (isAdminRole(user)) {
+      // Admin can filter by any userId or view all in their organization
       scopedUserId = query.userId;
     }
 
@@ -624,6 +672,7 @@ export class LeaveService {
     const skip = (page - 1) * limit;
 
     const filters = {
+      ...(orgId ? { organizationId: orgId } : {}),
       userId: scopedUserId,
       userIds: scopedUserIds,
       status: query.status,
@@ -655,6 +704,7 @@ export class LeaveService {
   ) {
     const requestedUserId = targetUserId || user.id;
     const targetYear = year || new Date().getFullYear();
+    const orgId = resolveOptionalLeaveOrgId(user);
 
     if (requestedUserId !== user.id) {
       if (user.role === Role.EMPLOYEE) {
@@ -663,15 +713,28 @@ export class LeaveService {
       if (user.role === Role.MANAGER) {
         const target = await prisma.user.findUnique({
           where: { id: requestedUserId },
-          select: { managerId: true },
+          select: { managerId: true, organizationId: true },
         });
-        if (target?.managerId !== user.id) {
+        if (target?.managerId !== user.id || (orgId && target?.organizationId && target.organizationId !== orgId)) {
           throw AppError.forbidden("Managers can only view leave balances of their direct reports");
+        }
+      } else if (isAdminRole(user) && orgId) {
+        const target = await prisma.user.findUnique({
+          where: { id: requestedUserId },
+          select: { organizationId: true },
+        });
+        if (target && target.organizationId && target.organizationId !== orgId) {
+          throw AppError.notFound("User not found");
         }
       }
     }
 
-    const balance = await this.getOrCreateBalance(requestedUserId, targetYear);
+    const balance = await this.getOrCreateBalance(
+      requestedUserId,
+      targetYear,
+      undefined,
+      orgId ?? DEFAULT_ORGANIZATION_ID
+    );
 
     return {
       ...balance,
@@ -685,12 +748,15 @@ export class LeaveService {
    * Registers a company holiday (Admin only).
    */
   async addHoliday(input: AddHolidayInput, user: AuthenticatedUser) {
-    if (user.role !== Role.ADMIN) {
+    if (!isAdminRole(user)) {
       throw AppError.forbidden("Only Administrators can register company holidays");
     }
 
+    const orgId = user.organizationId !== undefined ? resolveTenantId(user) : undefined;
     const date = normalizeDateToUTC(input.date);
-    const existing = await leaveRepository.findHolidayByDate(date);
+    const existing = await (orgId !== undefined
+      ? leaveRepository.findHolidayByDate(date, undefined, orgId)
+      : leaveRepository.findHolidayByDate(date));
     if (existing) {
       throw AppError.conflict(
         `A holiday is already registered on ${formatDateKeyUTC(date)}: ${existing.name}`
@@ -698,11 +764,13 @@ export class LeaveService {
     }
 
     const holiday = await leaveRepository.createHoliday({
+      ...(orgId !== undefined ? { organizationId: orgId } : {}),
       name: input.name.trim(),
       date,
     });
 
     await auditService.log({
+      organizationId: holiday.organizationId ?? orgId ?? null,
       actorId: user.id,
       action: "HOLIDAY_CREATED",
       entityType: "Holiday",
@@ -721,7 +789,7 @@ export class LeaveService {
    * Updates an existing company holiday (Admin only).
    */
   async updateHoliday(id: string, input: UpdateHolidayInput, user: AuthenticatedUser) {
-    if (user.role !== Role.ADMIN) {
+    if (!isAdminRole(user)) {
       throw AppError.forbidden("Only Administrators can modify company holidays");
     }
 
@@ -730,11 +798,17 @@ export class LeaveService {
       throw AppError.notFound("Holiday not found");
     }
 
+    assertSameTenant(existing.organizationId, user, "Holiday not found");
+
     let normalizedDate = existing.date;
     if (input.date) {
       normalizedDate = normalizeDateToUTC(input.date);
       if (normalizedDate.getTime() !== existing.date.getTime()) {
-        const conflict = await leaveRepository.findHolidayByDate(normalizedDate);
+        const conflict = await leaveRepository.findHolidayByDate(
+          normalizedDate,
+          undefined,
+          existing.organizationId ?? DEFAULT_ORGANIZATION_ID
+        );
         if (conflict && conflict.id !== id) {
           throw AppError.conflict(
             `A holiday is already registered on ${formatDateKeyUTC(normalizedDate)}: ${conflict.name}`
@@ -749,6 +823,7 @@ export class LeaveService {
     });
 
     await auditService.log({
+      organizationId: existing.organizationId ?? null,
       actorId: user.id,
       action: "HOLIDAY_UPDATED",
       entityType: "Holiday",
@@ -770,7 +845,7 @@ export class LeaveService {
    * Deletes a company holiday (Admin only).
    */
   async deleteHoliday(id: string, user: AuthenticatedUser) {
-    if (user.role !== Role.ADMIN) {
+    if (!isAdminRole(user)) {
       throw AppError.forbidden("Only Administrators can delete company holidays");
     }
 
@@ -779,9 +854,12 @@ export class LeaveService {
       throw AppError.notFound("Holiday not found");
     }
 
+    assertSameTenant(existing.organizationId, user, "Holiday not found");
+
     const deleted = await leaveRepository.deleteHoliday(id);
 
     await auditService.log({
+      organizationId: existing.organizationId ?? null,
       actorId: user.id,
       action: "HOLIDAY_DELETED",
       entityType: "Holiday",
@@ -800,8 +878,9 @@ export class LeaveService {
   /**
    * Lists company holidays, optionally filtered by year.
    */
-  async listHolidays(year?: number) {
-    return leaveRepository.findAllHolidays(year);
+  async listHolidays(year?: number, user?: AuthenticatedUser) {
+    const orgId = user ? resolveOptionalLeaveOrgId(user) : undefined;
+    return leaveRepository.findAllHolidays(year, undefined, orgId);
   }
 }
 

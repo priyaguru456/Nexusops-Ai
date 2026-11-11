@@ -83,7 +83,7 @@ export class LeaveController {
     try {
       if (!req.user) throw AppError.unauthorized();
       const year = req.query.year ? Number(req.query.year) : undefined;
-      const holidays = await leaveService.listHolidays(year);
+      const holidays = await leaveService.listHolidays(year, req.user);
       res.status(200).json({ holidays });
     } catch (error) {
       next(error);

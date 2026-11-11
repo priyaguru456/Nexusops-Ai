@@ -40,6 +40,8 @@ describe("Integration: Approvals Workflow (Real Test DB)", () => {
     // Create 2-step approval sequence for this request
     const step1 = await prisma.approvalStep.create({
       data: {
+        organizationId: emp.organizationId!,
+        entityId: workReq.id,
         requestId: workReq.id,
         stepOrder: 1,
         approverRole: Role.MANAGER,
@@ -50,6 +52,8 @@ describe("Integration: Approvals Workflow (Real Test DB)", () => {
 
     const step2 = await prisma.approvalStep.create({
       data: {
+        organizationId: emp.organizationId!,
+        entityId: workReq.id,
         requestId: workReq.id,
         stepOrder: 2,
         approverRole: Role.ADMIN,
@@ -103,6 +107,8 @@ describe("Integration: Approvals Workflow (Real Test DB)", () => {
 
     const step1 = await prisma.approvalStep.create({
       data: {
+        organizationId: emp.organizationId!,
+        entityId: workReq.id,
         requestId: workReq.id,
         stepOrder: 1,
         approverRole: Role.MANAGER,
@@ -113,6 +119,8 @@ describe("Integration: Approvals Workflow (Real Test DB)", () => {
 
     const step2 = await prisma.approvalStep.create({
       data: {
+        organizationId: emp.organizationId!,
+        entityId: workReq.id,
         requestId: workReq.id,
         stepOrder: 2,
         approverRole: Role.ADMIN,
@@ -158,6 +166,8 @@ describe("Integration: Approvals Workflow (Real Test DB)", () => {
 
     const step = await prisma.approvalStep.create({
       data: {
+        organizationId: requesterMgr.organizationId!,
+        entityId: workReq.id,
         requestId: workReq.id,
         stepOrder: 1,
         approverRole: Role.MANAGER,
@@ -187,6 +197,8 @@ describe("Integration: Approvals Workflow (Real Test DB)", () => {
 
     await prisma.approvalStep.create({
       data: {
+        organizationId: emp.organizationId!,
+        entityId: workReq.id,
         requestId: workReq.id,
         stepOrder: 1,
         approverRole: Role.MANAGER,
@@ -197,6 +209,8 @@ describe("Integration: Approvals Workflow (Real Test DB)", () => {
 
     const step2 = await prisma.approvalStep.create({
       data: {
+        organizationId: emp.organizationId!,
+        entityId: workReq.id,
         requestId: workReq.id,
         stepOrder: 2,
         approverRole: Role.ADMIN,
@@ -227,6 +241,8 @@ describe("Integration: Approvals Workflow (Real Test DB)", () => {
 
     const step = await prisma.approvalStep.create({
       data: {
+        organizationId: emp.organizationId!,
+        entityId: workReq.id,
         requestId: workReq.id,
         stepOrder: 1,
         approverRole: Role.ADMIN,

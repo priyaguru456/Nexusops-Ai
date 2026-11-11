@@ -88,6 +88,7 @@ describe("Configurable Approval Workflows - Unit Tests", () => {
     name: "Admin Alice",
     email: "admin@nexusops.com",
     role: Role.ADMIN,
+    organizationId: "00000000-0000-4000-8000-000000000001",
     departmentId: "dept-it",
     isActive: true,
   };
@@ -97,6 +98,7 @@ describe("Configurable Approval Workflows - Unit Tests", () => {
     name: "Manager Bob",
     email: "manager@nexusops.com",
     role: Role.MANAGER,
+    organizationId: "00000000-0000-4000-8000-000000000001",
     departmentId: "dept-it",
     isActive: true,
   };
@@ -106,6 +108,7 @@ describe("Configurable Approval Workflows - Unit Tests", () => {
     name: "Employee Charlie",
     email: "emp@nexusops.com",
     role: Role.EMPLOYEE,
+    organizationId: "00000000-0000-4000-8000-000000000001",
     departmentId: "dept-it",
     isActive: true,
   };
@@ -226,6 +229,7 @@ describe("Configurable Approval Workflows - Unit Tests", () => {
         id: "inactive-user",
         isActive: false,
         role: Role.MANAGER,
+        organizationId: "00000000-0000-4000-8000-000000000001",
       } as any);
 
       await expect(

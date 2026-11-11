@@ -15,3 +15,18 @@ export const profileApi = {
     return res.data;
   },
 };
+
+export const authApi = {
+  forgotPassword: async (email: string): Promise<{ message: string }> => {
+    const res = await api.post<{ message: string }>("/auth/forgot-password", { email });
+    return res.data;
+  },
+
+  resetPassword: async (data: {
+    token: string;
+    newPassword: string;
+  }): Promise<{ message: string }> => {
+    const res = await api.post<{ message: string }>("/auth/reset-password", data);
+    return res.data;
+  },
+};

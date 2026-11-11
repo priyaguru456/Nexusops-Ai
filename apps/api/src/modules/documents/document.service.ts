@@ -8,6 +8,13 @@ import { documentRepository } from "./document.repository";
 import { UploadDocumentMetadataInput, GetDocumentsQuery } from "./document.schema";
 import { logger } from "../../lib/logger";
 import { auditService } from "../audit/audit.service";
+import {
+  assertSameTenant,
+  isAdminRole,
+  isSuperAdmin,
+  resolveTenantId,
+  tenantWhere,
+} from "../../lib/tenant";
 
 const ALLOWED_EXTENSIONS = new Set([".pdf", ".docx", ".doc", ".txt", ".md"]);
 
@@ -50,9 +57,23 @@ export function validateMimeAndExtension(originalName: string, mimeType: string)
 
 export function canUserAccessDocument(
   user: AuthenticatedUser,
-  doc: { visibility: DocVisibility; departmentId: string | null; uploadedById: string }
+  doc: {
+    organizationId?: string;
+    visibility: DocVisibility;
+    departmentId: string | null;
+    uploadedById: string;
+  }
 ): boolean {
-  if (user.role === Role.ADMIN) return true;
+  if (
+    !isSuperAdmin(user) &&
+    user.organizationId !== undefined &&
+    doc.organizationId !== undefined &&
+    doc.organizationId !== user.organizationId
+  ) {
+    return false;
+  }
+
+  if (isAdminRole(user)) return true;
   if (doc.uploadedById === user.id) return true;
   if (doc.visibility === DocVisibility.ALL) return true;
   if (doc.visibility === DocVisibility.MANAGERS && user.role === Role.MANAGER) return true;
@@ -67,8 +88,10 @@ export function canUserAccessDocument(
 }
 
 export function buildVisibilityFilter(user: AuthenticatedUser): Prisma.DocumentWhereInput {
-  if (user.role === Role.ADMIN) {
-    return {};
+  const scope = tenantWhere(user);
+
+  if (isAdminRole(user)) {
+    return scope;
   }
 
   if (user.role === Role.MANAGER) {
@@ -83,7 +106,7 @@ export function buildVisibilityFilter(user: AuthenticatedUser): Prisma.DocumentW
         departmentId: user.departmentId,
       });
     }
-    return { OR: conditions };
+    return { ...scope, OR: conditions };
   }
 
   // Role.EMPLOYEE
@@ -97,7 +120,7 @@ export function buildVisibilityFilter(user: AuthenticatedUser): Prisma.DocumentW
       departmentId: user.departmentId,
     });
   }
-  return { OR: conditions };
+  return { ...scope, OR: conditions };
 }
 
 export const documentService = {
@@ -120,6 +143,8 @@ export const documentService = {
       metadata.title ||
       path.basename(file.originalname, path.extname(file.originalname));
 
+    const organizationId = resolveTenantId(user);
+
     // 3. Create document record in database
     const doc = await documentRepository.create({
       title,
@@ -131,6 +156,7 @@ export const documentService = {
       visibility: metadata.visibility || DocVisibility.ALL,
       version: metadata.version || 1,
       status: DocStatus.UPLOADED,
+      organization: { connect: { id: organizationId } },
       department: user.departmentId ? { connect: { id: user.departmentId } } : undefined,
       uploadedBy: { connect: { id: user.id } },
     });
@@ -145,6 +171,7 @@ export const documentService = {
     // 5. Record audit entry for document upload
     await auditService.log({
       actorId: user.id,
+      organizationId,
       action: "DOCUMENT_UPLOADED",
       entityType: "Document",
       entityId: doc.id,
@@ -259,6 +286,8 @@ export const documentService = {
       throw AppError.notFound("Document not found");
     }
 
+    assertSameTenant(doc.organizationId, user, "Document not found");
+
     if (!canUserAccessDocument(user, doc)) {
       throw AppError.forbidden("You do not have permission to reprocess this document");
     }
@@ -282,6 +311,7 @@ export const documentService = {
     // Record audit log for important state change
     await auditService.log({
       actorId: user.id,
+      organizationId: doc.organizationId,
       action: "DOCUMENT_RETRY_EMBEDDING",
       entityType: "Document",
       entityId: id,
@@ -300,7 +330,9 @@ export const documentService = {
       throw AppError.notFound("Document not found");
     }
 
-    if (user.role !== Role.ADMIN) {
+    assertSameTenant(doc.organizationId, user, "Document not found");
+
+    if (!isAdminRole(user)) {
       throw AppError.forbidden("Only administrators can delete documents");
     }
 
@@ -313,6 +345,7 @@ export const documentService = {
     // Record audit entry for document deletion
     await auditService.log({
       actorId: user.id,
+      organizationId: doc.organizationId,
       action: "DOCUMENT_DELETED",
       entityType: "Document",
       entityId: id,
@@ -337,7 +370,9 @@ export const documentService = {
       throw AppError.notFound("Document not found");
     }
 
-    if (user.role !== Role.ADMIN) {
+    assertSameTenant(doc.organizationId, user, "Document not found");
+
+    if (!isAdminRole(user)) {
       throw AppError.forbidden("Only administrators can upload a new version of a document");
     }
 

@@ -13,6 +13,7 @@ import {
   LLMMessage,
 } from "../../lib/llm";
 import { AuthenticatedUser } from "../../types/express";
+import { assertSameTenant, resolveTenantId } from "../../lib/tenant";
 
 export interface StreamChatCallbacks {
   onToken: (token: string) => void;
@@ -62,6 +63,7 @@ export const chatService = {
       if (!session) {
         throw AppError.notFound("Chat session not found");
       }
+      assertSameTenant(session.organizationId, user, "Chat session not found");
       if (session.userId !== user.id) {
         throw AppError.forbidden("You do not have access to this chat session");
       }
@@ -74,6 +76,7 @@ export const chatService = {
       session = await prisma.chatSession.create({
         data: {
           userId: user.id,
+          organizationId: resolveTenantId(user),
           title: generatedTitle,
         },
       });

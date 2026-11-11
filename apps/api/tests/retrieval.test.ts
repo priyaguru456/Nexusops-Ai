@@ -45,12 +45,24 @@ describe("AI Retrieval & Hybrid Search Tests (pgvector & RBAC)", () => {
         hasPgVector = false;
       }
 
+      // 1.5 Ensure test organization exists
+      const testOrg = await prisma.organization.upsert({
+        where: { slug: "retrieval-test-org" },
+        update: { isActive: true },
+        create: {
+          name: "Retrieval Test Org",
+          slug: "retrieval-test-org",
+          isActive: true,
+        },
+      });
+      const orgId = testOrg.id;
+
       // 2. Setup Departments in real test database
       const deptA = await prisma.department.create({
-        data: { name: `Test Dept IT ${Date.now()}` },
+        data: { name: `Test Dept IT ${Date.now()}`, organizationId: orgId },
       });
       const deptB = await prisma.department.create({
-        data: { name: `Test Dept HR ${Date.now()}` },
+        data: { name: `Test Dept HR ${Date.now()}`, organizationId: orgId },
       });
       deptAId = deptA.id;
       deptBId = deptB.id;
@@ -63,6 +75,7 @@ describe("AI Retrieval & Hybrid Search Tests (pgvector & RBAC)", () => {
           email: `admin-${Date.now()}@test.com`,
           passwordHash: "hash",
           role: Role.ADMIN,
+          organizationId: orgId,
           departmentId: deptAId,
         },
       });
@@ -74,6 +87,7 @@ describe("AI Retrieval & Hybrid Search Tests (pgvector & RBAC)", () => {
           email: `mgr-a-${Date.now()}@test.com`,
           passwordHash: "hash",
           role: Role.MANAGER,
+          organizationId: orgId,
           departmentId: deptAId,
         },
       });
@@ -85,6 +99,7 @@ describe("AI Retrieval & Hybrid Search Tests (pgvector & RBAC)", () => {
           email: `mgr-b-${Date.now()}@test.com`,
           passwordHash: "hash",
           role: Role.MANAGER,
+          organizationId: orgId,
           departmentId: deptBId,
         },
       });
@@ -96,6 +111,7 @@ describe("AI Retrieval & Hybrid Search Tests (pgvector & RBAC)", () => {
           email: `emp-a-${Date.now()}@test.com`,
           passwordHash: "hash",
           role: Role.EMPLOYEE,
+          organizationId: orgId,
           departmentId: deptAId,
         },
       });
@@ -107,6 +123,7 @@ describe("AI Retrieval & Hybrid Search Tests (pgvector & RBAC)", () => {
           email: `emp-b-${Date.now()}@test.com`,
           passwordHash: "hash",
           role: Role.EMPLOYEE,
+          organizationId: orgId,
           departmentId: deptBId,
         },
       });
@@ -122,6 +139,7 @@ describe("AI Retrieval & Hybrid Search Tests (pgvector & RBAC)", () => {
       }) {
         const doc = await prisma.document.create({
           data: {
+            organizationId: orgId,
             title: params.title,
             fileName: `${params.title.toLowerCase().replace(/\s+/g, "_")}.txt`,
             filePath: `test/${Date.now()}.txt`,
@@ -137,6 +155,7 @@ describe("AI Retrieval & Hybrid Search Tests (pgvector & RBAC)", () => {
 
         const chunk = await prisma.documentChunk.create({
           data: {
+            organizationId: orgId,
             documentId: doc.id,
             chunkIndex: 0,
             pageNumber: 1,

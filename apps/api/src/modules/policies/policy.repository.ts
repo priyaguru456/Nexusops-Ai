@@ -176,7 +176,7 @@ export const policyRepository = {
     });
   },
 
-  async findActiveUsers(departmentId?: string): Promise<
+  async findActiveUsers(departmentId?: string, organizationId?: string): Promise<
     (User & {
       department: Department | null;
     })[]
@@ -184,6 +184,7 @@ export const policyRepository = {
     return prisma.user.findMany({
       where: {
         isActive: true,
+        ...(organizationId ? { organizationId } : {}),
         ...(departmentId ? { departmentId } : {}),
       },
       include: {
@@ -193,8 +194,9 @@ export const policyRepository = {
     });
   },
 
-  async findAllDepartments(): Promise<Department[]> {
+  async findAllDepartments(organizationId?: string): Promise<Department[]> {
     return prisma.department.findMany({
+      where: organizationId ? { organizationId } : undefined,
       orderBy: { name: "asc" },
     });
   },

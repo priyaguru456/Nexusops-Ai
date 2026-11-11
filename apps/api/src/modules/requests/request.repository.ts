@@ -68,6 +68,7 @@ export interface CreateRequestData {
   amount?: number | null;
   dueDate?: Date | null;
   requesterId: string;
+  organizationId: string;
   attachments?: Array<{ fileName: string; filePath: string }>;
 }
 
@@ -112,6 +113,7 @@ export class RequestRepository {
         amount: data.amount !== undefined && data.amount !== null ? new Prisma.Decimal(data.amount) : null,
         dueDate: data.dueDate ?? null,
         requesterId: data.requesterId,
+        organizationId: data.organizationId,
         attachments: data.attachments?.length
           ? {
               create: data.attachments.map((att) => ({

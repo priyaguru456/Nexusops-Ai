@@ -179,6 +179,7 @@ export class RequestApprovalHandler implements ApprovalEntityHandler {
         status: TaskStatus.TODO,
         dueDate: request.dueDate,
         requestId: request.id,
+        organizationId: request.organizationId,
         assignedById: user.id,
         assigneeId: null,
       },
@@ -186,6 +187,7 @@ export class RequestApprovalHandler implements ApprovalEntityHandler {
 
     await auditService.log({
       actorId: user.id,
+      organizationId: request.organizationId,
       action: "REQUEST_APPROVED",
       entityType: this.getEntityTypeName(),
       entityId: requestId,
@@ -198,6 +200,7 @@ export class RequestApprovalHandler implements ApprovalEntityHandler {
 
     await auditService.log({
       actorId: user.id,
+      organizationId: request.organizationId,
       action: "TASK_CREATED",
       entityType: "Task",
       entityId: createdTask.id,

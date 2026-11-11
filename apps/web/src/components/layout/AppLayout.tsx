@@ -25,6 +25,7 @@ import {
   CalendarDays,
   Star,
   Receipt,
+  Building2,
 } from "lucide-react";
 import { useAuth } from "../../features/auth/AuthContext";
 import { ThemeToggle } from "./ThemeToggle";
@@ -33,13 +34,14 @@ import { GlobalSearchModal } from "./GlobalSearchModal";
 import { CsatSurveyModal } from "../../features/surveys/CsatSurveyModal";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
-import type { Role } from "../../types/auth";
+import { hasRoleAccess, type Role } from "../../types/auth";
 
 interface NavItem {
   label: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   roles: Role[];
+  exactRoles?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -134,6 +136,13 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["ADMIN"],
   },
   {
+    label: "Organizations",
+    href: "/super-admin/organizations",
+    icon: Building2,
+    roles: ["SUPER_ADMIN"],
+    exactRoles: true,
+  },
+  {
     label: "Settings",
     href: "/settings",
     icon: Settings,
@@ -160,10 +169,13 @@ export const AppLayout: React.FC = () => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const visibleNavItems = NAV_ITEMS.filter((item) => (role ? item.roles.includes(role) : false));
+  const visibleNavItems = NAV_ITEMS.filter((item) =>
+    hasRoleAccess(role, item.roles, item.exactRoles)
+  );
 
   const roleBadgeVariant = (userRole?: Role) => {
     switch (userRole) {
+      case "SUPER_ADMIN":
       case "ADMIN":
         return "destructive";
       case "MANAGER":
@@ -195,6 +207,7 @@ export const AppLayout: React.FC = () => {
     if (pathname.startsWith("/analytics")) return { title: "Analytics", section: "Analytics" };
     if (pathname.startsWith("/directory")) return { title: "Company Directory", section: "Organization" };
     if (pathname.startsWith("/announcements")) return { title: "Announcements", section: "Communications" };
+    if (pathname.startsWith("/super-admin/organizations")) return { title: "Organizations", section: "Platform" };
     if (pathname.startsWith("/admin/users")) return { title: "User Management", section: "Administration" };
     if (pathname.startsWith("/admin/audit")) return { title: "Audit Logs", section: "Administration" };
     if (pathname.startsWith("/notifications")) return { title: "Notifications", section: "Workspace" };
@@ -258,7 +271,9 @@ export const AppLayout: React.FC = () => {
               </div>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <p className="text-[11px] font-medium text-slate-400">Enterprise Suite</p>
+                <p className="text-[11px] font-medium text-slate-400 truncate max-w-[140px]">
+                  {user?.organization?.name || (user?.role === "SUPER_ADMIN" ? "Platform Control" : "Enterprise Suite")}
+                </p>
               </div>
             </div>
           </Link>
@@ -306,9 +321,16 @@ export const AppLayout: React.FC = () => {
                 <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                   {user?.name || "User"}
                 </p>
-                <Badge variant={roleBadgeVariant(user?.role)} className="mt-0.5 text-[9px] py-0 px-1.5 font-semibold">
-                  {user?.role || "EMPLOYEE"}
-                </Badge>
+                <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                  <Badge variant={roleBadgeVariant(user?.role)} className="text-[9px] py-0 px-1.5 font-semibold">
+                    {user?.role || "EMPLOYEE"}
+                  </Badge>
+                  {user?.organization?.slug && (
+                    <span className="text-[10px] text-slate-400 truncate max-w-[75px]">
+                      @{user.organization.slug}
+                    </span>
+                  )}
+                </div>
               </div>
             </Link>
             <Button

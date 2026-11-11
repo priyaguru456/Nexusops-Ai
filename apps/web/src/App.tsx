@@ -4,6 +4,8 @@ import { AuthProvider } from "./features/auth/AuthContext";
 import { ToastProvider } from "./components/ui/toast";
 import { LoginPage } from "./features/auth/LoginPage";
 import { RegisterPage } from "./features/auth/RegisterPage";
+import { ForgotPasswordPage } from "./features/auth/ForgotPasswordPage";
+import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
 import { ProtectedRoute } from "./routes/ProtectedRoute";
 import { AppLayout } from "./components/layout/AppLayout";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -20,6 +22,7 @@ import { DocumentsPage } from "./features/documents/DocumentsPage";
 import { AiAssistantPage } from "./features/ai/AiAssistantPage";
 import { AnalyticsPage } from "./features/analytics/AnalyticsPage";
 import { UserManagementPage } from "./features/admin/UserManagementPage";
+import { OrganizationsPage } from "./features/admin/OrganizationsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { NotificationsPage } from "./features/notifications/NotificationsPage";
 import { AnnouncementsPage } from "./features/announcements/AnnouncementsPage";
@@ -39,6 +42,8 @@ export default function App(): React.JSX.Element {
             {/* Public authentication routes */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/403" element={<ForbiddenPage />} />
 
             {/* Protected application routes */}
@@ -120,6 +125,16 @@ export default function App(): React.JSX.Element {
                   element={
                     <ProtectedRoute roles={["ADMIN"]}>
                       <SurveysAdminPage />
+                    </ProtectedRoute>
+                  }
+                />
+
+                {/* Super Admin platform governance */}
+                <Route
+                  path="/super-admin/organizations"
+                  element={
+                    <ProtectedRoute roles={["SUPER_ADMIN"]} exact>
+                      <OrganizationsPage />
                     </ProtectedRoute>
                   }
                 />

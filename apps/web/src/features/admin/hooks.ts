@@ -1,5 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { adminApi, type UserQueryFilters } from "./api";
+import {
+  organizationsApi,
+  type CreateOrganizationPayload,
+  type OrganizationQueryFilters,
+  type UpdateOrganizationPayload,
+} from "./organizations.api";
 import type { AuditLogQueryFilters } from "../../types/audit";
 import type { Role } from "../../types/auth";
 
@@ -11,6 +17,11 @@ export const AUDIT_KEYS = {
 export const USER_KEYS = {
   all: ["users"] as const,
   list: (filters: UserQueryFilters) => [...USER_KEYS.all, "list", filters] as const,
+};
+
+export const ORGANIZATION_KEYS = {
+  all: ["organizations"] as const,
+  list: (filters: OrganizationQueryFilters) => [...ORGANIZATION_KEYS.all, "list", filters] as const,
 };
 
 export const useAuditLogs = (filters: AuditLogQueryFilters = {}) => {
@@ -51,6 +62,34 @@ export const useUpdateUserStatus = () => {
       adminApi.updateUserStatus(userId, isActive),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: USER_KEYS.all });
+    },
+  });
+};
+
+export const useOrganizations = (filters: OrganizationQueryFilters = {}) => {
+  return useQuery({
+    queryKey: ORGANIZATION_KEYS.list(filters),
+    queryFn: () => organizationsApi.list(filters),
+  });
+};
+
+export const useCreateOrganization = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateOrganizationPayload) => organizationsApi.create(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ORGANIZATION_KEYS.all });
+    },
+  });
+};
+
+export const useUpdateOrganization = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: UpdateOrganizationPayload }) =>
+      organizationsApi.update(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ORGANIZATION_KEYS.all });
     },
   });
 };

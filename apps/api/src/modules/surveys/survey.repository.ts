@@ -1,11 +1,13 @@
 import { Role, RequestStatus, Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { DEFAULT_ORGANIZATION_ID } from "../../lib/tenant";
 import type { CreateSurveyInput, UpdateSurveyInput } from "./survey.schema";
 
 export class SurveyRepository {
-  async findDefaultActiveSurvey(targetRole?: Role | null) {
+  async findDefaultActiveSurvey(targetRole?: Role | null, organizationId?: string) {
     return prisma.survey.findFirst({
       where: {
+        ...(organizationId ? { organizationId } : {}),
         isActive: true,
         OR: [
           { targetRole: null },
@@ -16,8 +18,12 @@ export class SurveyRepository {
     });
   }
 
-  async findPendingCsatForUser(userId: string, targetRole?: Role | null) {
-    const activeSurvey = await this.findDefaultActiveSurvey(targetRole);
+  async findPendingCsatForUser(
+    userId: string,
+    targetRole?: Role | null,
+    organizationId?: string
+  ) {
+    const activeSurvey = await this.findDefaultActiveSurvey(targetRole, organizationId);
     if (!activeSurvey) {
       return null;
     }
@@ -37,6 +43,7 @@ export class SurveyRepository {
 
     const pendingRequest = await prisma.workRequest.findFirst({
       where: {
+        ...(organizationId ? { organizationId } : {}),
         requesterId: userId,
         status: RequestStatus.COMPLETED,
         id: {
@@ -65,9 +72,10 @@ export class SurveyRepository {
     };
   }
 
-  async createSurvey(data: CreateSurveyInput) {
+  async createSurvey(data: CreateSurveyInput & { organizationId?: string }) {
     return prisma.survey.create({
       data: {
+        organizationId: data.organizationId ?? DEFAULT_ORGANIZATION_ID,
         title: data.title,
         isActive: data.isActive ?? true,
         targetRole: data.targetRole ?? null,
@@ -110,8 +118,9 @@ export class SurveyRepository {
     });
   }
 
-  async findAll() {
+  async findAll(organizationId?: string) {
     return prisma.survey.findMany({
+      where: organizationId ? { organizationId } : undefined,
       orderBy: { createdAt: "desc" },
       include: {
         _count: {
@@ -161,9 +170,15 @@ export class SurveyRepository {
     });
   }
 
-  async getResponsesForResults(surveyId?: string, fromDate?: Date, toDate?: Date) {
+  async getResponsesForResults(
+    surveyId?: string,
+    fromDate?: Date,
+    toDate?: Date,
+    organizationId?: string
+  ) {
     const where: Prisma.SurveyResponseWhereInput = {
       ...(surveyId ? { surveyId } : {}),
+      ...(organizationId ? { survey: { organizationId } } : {}),
       ...(fromDate || toDate
         ? {
             createdAt: {
@@ -201,12 +216,14 @@ export class SurveyRepository {
   }
 
   async listResponses(filters: {
+    organizationId?: string;
     surveyId?: string;
     entityType?: string;
     page: number;
     limit: number;
   }) {
     const where: Prisma.SurveyResponseWhereInput = {
+      ...(filters.organizationId ? { survey: { organizationId: filters.organizationId } } : {}),
       ...(filters.surveyId ? { surveyId: filters.surveyId } : {}),
       ...(filters.entityType ? { entityType: filters.entityType } : {}),
     };

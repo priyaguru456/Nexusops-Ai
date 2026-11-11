@@ -2,10 +2,22 @@ import { Role, RequestStatus } from "@prisma/client";
 import { surveyRepository } from "./survey.repository";
 import { prisma } from "../../lib/prisma";
 import { AppError } from "../../lib/errors";
+import {
+  assertSameTenant,
+  DEFAULT_ORGANIZATION_ID,
+  isSuperAdmin,
+  resolveTenantId,
+} from "../../lib/tenant";
 import { auditService } from "../audit/audit.service";
 import { notificationService } from "../notifications/notification.service";
 import type { AuthenticatedUser } from "../../types/express";
 import type { CreateSurveyInput, UpdateSurveyInput, SubmitSurveyResponseInput } from "./survey.schema";
+
+function resolveOptionalSurveyOrgId(user?: AuthenticatedUser): string | undefined {
+  if (!user || user.organizationId === undefined) return undefined;
+  if (isSuperAdmin(user) && !user.organizationId) return undefined;
+  return resolveTenantId(user);
+}
 
 export interface RatingDistributionItem {
   stars: number;
@@ -138,17 +150,21 @@ export function calculateCategoryBreakdown(
 
 export class SurveyService {
   /**
-   * Automatically seed a default CSAT survey if none exists.
+   * Automatically seed a default CSAT survey for the organization if none exists.
    */
-  async ensureDefaultCsatSurvey() {
+  async ensureDefaultCsatSurvey(organizationId: string = DEFAULT_ORGANIZATION_ID) {
     const existing = await prisma.survey.findFirst({
-      where: { title: "Request Fulfillment CSAT" },
+      where: {
+        organizationId,
+        title: "Request Fulfillment CSAT",
+      },
     });
     if (existing) return existing;
 
     try {
       return await prisma.survey.create({
         data: {
+          organizationId,
           title: "Request Fulfillment CSAT",
           isActive: true,
           targetRole: null,
@@ -173,7 +189,10 @@ export class SurveyService {
     } catch {
       // If concurrent request created it, return existing
       return prisma.survey.findFirst({
-        where: { title: "Request Fulfillment CSAT" },
+        where: {
+          organizationId,
+          title: "Request Fulfillment CSAT",
+        },
       });
     }
   }
@@ -183,8 +202,9 @@ export class SurveyService {
    * that hasn't received a CSAT response yet.
    */
   async getPendingCsat(user: AuthenticatedUser) {
-    await this.ensureDefaultCsatSurvey();
-    return surveyRepository.findPendingCsatForUser(user.id, user.role);
+    const orgId = resolveOptionalSurveyOrgId(user);
+    await this.ensureDefaultCsatSurvey(orgId ?? DEFAULT_ORGANIZATION_ID);
+    return surveyRepository.findPendingCsatForUser(user.id, user.role, orgId);
   }
 
   /**
@@ -196,6 +216,8 @@ export class SurveyService {
     if (!survey) {
       throw AppError.notFound("Survey not found");
     }
+
+    assertSameTenant(survey.organizationId, user, "Survey not found");
 
     if (!survey.isActive) {
       throw AppError.badRequest("This survey is currently inactive");
@@ -215,6 +237,8 @@ export class SurveyService {
       if (!request) {
         throw AppError.notFound("Target request not found");
       }
+
+      assertSameTenant(request.organizationId, user, "Target request not found");
 
       // Requester privacy: only requester can submit CSAT for their fulfilled request
       if (request.requesterId !== user.id) {
@@ -258,6 +282,7 @@ export class SurveyService {
 
     // Record audit log
     await auditService.log({
+      organizationId: survey.organizationId ?? null,
       actorId: user.id,
       action: "SURVEY_RESPONSE_SUBMITTED",
       entityType: "SurveyResponse",
@@ -286,10 +311,15 @@ export class SurveyService {
         savedResponse.id
       );
 
-      // Low CSAT Alert for Admins if rating is 1 or 2 stars
+      // Low CSAT Alert for Admins in the survey's organization if rating is 1 or 2 stars
       if (rating && rating <= 2) {
+        const alertOrgId = survey.organizationId ?? resolveOptionalSurveyOrgId(user);
         const admins = await prisma.user.findMany({
-          where: { role: Role.ADMIN, isActive: true },
+          where: {
+            role: Role.ADMIN,
+            isActive: true,
+            ...(alertOrgId ? { organizationId: alertOrgId } : {}),
+          },
           select: { id: true },
         });
 
@@ -310,9 +340,15 @@ export class SurveyService {
   }
 
   async createSurvey(user: AuthenticatedUser, input: CreateSurveyInput) {
-    const survey = await surveyRepository.createSurvey(input);
+    const orgId =
+      user.organizationId !== undefined ? resolveTenantId(user) : DEFAULT_ORGANIZATION_ID;
+    const survey = await surveyRepository.createSurvey({
+      ...input,
+      organizationId: orgId,
+    });
 
     await auditService.log({
+      organizationId: survey.organizationId ?? (user.organizationId !== undefined ? orgId : null),
       actorId: user.id,
       action: "SURVEY_CREATED",
       entityType: "Survey",
@@ -334,9 +370,12 @@ export class SurveyService {
       throw AppError.notFound("Survey not found");
     }
 
+    assertSameTenant(existing.organizationId, user, "Survey not found");
+
     const updated = await surveyRepository.updateSurvey(id, input);
 
     await auditService.log({
+      organizationId: existing.organizationId ?? null,
       actorId: user.id,
       action: "SURVEY_UPDATED",
       entityType: "Survey",
@@ -356,12 +395,15 @@ export class SurveyService {
       throw AppError.notFound("Survey not found");
     }
 
+    assertSameTenant(existing.organizationId, user, "Survey not found");
+
     const updated = await surveyRepository.toggleActive(id);
     if (!updated) {
       throw AppError.notFound("Survey not found");
     }
 
     await auditService.log({
+      organizationId: existing.organizationId ?? null,
       actorId: user.id,
       action: "SURVEY_STATUS_TOGGLED",
       entityType: "Survey",
@@ -375,15 +417,19 @@ export class SurveyService {
     return updated;
   }
 
-  async listSurveys() {
-    await this.ensureDefaultCsatSurvey();
-    return surveyRepository.findAll();
+  async listSurveys(user?: AuthenticatedUser) {
+    const orgId = resolveOptionalSurveyOrgId(user);
+    await this.ensureDefaultCsatSurvey(orgId ?? DEFAULT_ORGANIZATION_ID);
+    return surveyRepository.findAll(orgId);
   }
 
-  async getSurveyById(id: string) {
+  async getSurveyById(id: string, user?: AuthenticatedUser) {
     const survey = await surveyRepository.findById(id);
     if (!survey) {
       throw AppError.notFound("Survey not found");
+    }
+    if (user) {
+      assertSameTenant(survey.organizationId, user, "Survey not found");
     }
     return survey;
   }
@@ -395,14 +441,21 @@ export class SurveyService {
   async getResults(
     surveyId?: string,
     fromDateStr?: string,
-    toDateStr?: string
+    toDateStr?: string,
+    user?: AuthenticatedUser
   ): Promise<SurveyResultsResponse> {
-    await this.ensureDefaultCsatSurvey();
+    const orgId = resolveOptionalSurveyOrgId(user);
+    await this.ensureDefaultCsatSurvey(orgId ?? DEFAULT_ORGANIZATION_ID);
 
     const fromDate = fromDateStr ? new Date(fromDateStr) : undefined;
     const toDate = toDateStr ? new Date(toDateStr) : undefined;
 
-    const rawResponses = await surveyRepository.getResponsesForResults(surveyId, fromDate, toDate);
+    const rawResponses = await surveyRepository.getResponsesForResults(
+      surveyId,
+      fromDate,
+      toDate,
+      orgId
+    );
 
     // Extract requests to map categories
     const requestEntityIds = rawResponses
@@ -462,13 +515,20 @@ export class SurveyService {
     };
   }
 
-  async listResponses(filters: {
-    surveyId?: string;
-    entityType?: string;
-    page: number;
-    limit: number;
-  }) {
-    return surveyRepository.listResponses(filters);
+  async listResponses(
+    filters: {
+      surveyId?: string;
+      entityType?: string;
+      page: number;
+      limit: number;
+    },
+    user?: AuthenticatedUser
+  ) {
+    const orgId = resolveOptionalSurveyOrgId(user);
+    return surveyRepository.listResponses({
+      ...filters,
+      ...(orgId ? { organizationId: orgId } : {}),
+    });
   }
 }
 

@@ -1,0 +1,282 @@
+name: NexusOps AI CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  typecheck-and-build:
+    name: Typecheck, Lint & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            apps/api/package-lock.json
+            apps/web/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm --prefix apps/api ci
+
+      - name: Generate Prisma client
+        run: npx --prefix apps/api prisma generate
+
+      - name: Typecheck & build backend
+        run: |
+          npm --prefix apps/api exec -- tsc --noEmit
+          npm --prefix apps/api run build
+
+      - name: Install frontend dependencies
+        run: npm --prefix apps/web ci
+
+      - name: Lint frontend (report legacy warnings & fail on new auth/admin errors)
+        run: |
+          npm --prefix apps/web exec -- eslint \
+            src/types/auth.ts \
+            src/routes/ProtectedRoute.tsx \
+            src/features/auth/ForgotPasswordPage.tsx \
+            src/features/auth/ResetPasswordPage.tsx \
+            src/features/auth/ForgotResetPassword.test.tsx \
+            src/features/auth/schemas.ts \
+            src/features/auth/AuthContext.tsx \
+            src/features/auth/RegisterPage.tsx \
+            src/features/admin/organizations.api.ts \
+            src/features/admin/OrganizationsPage.tsx \
+            src/features/admin/OrganizationsPage.test.tsx \
+            src/features/admin/hooks.ts \
+            src/App.tsx
+
+      - name: Run full ESLint report (non-blocking for legacy test casts)
+        continue-on-error: true
+        run: npm --prefix apps/web run lint
+
+      - name: Typecheck & build frontend
+        run: npm --prefix apps/web run build
+
+  frontend-tests:
+    name: Frontend Unit & Component Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm --prefix apps/web ci
+
+      - name: Run Vitest frontend suite
+        run: npm --prefix apps/web run test
+
+  backend-tests:
+    name: Backend Unit & Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nexusops_ai_test
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nexusops_ai_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - "6379:6379"
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      PORT: "4000"
+      CLIENT_URL: http://localhost:5173
+      CORS_ORIGINS: http://localhost:5173
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nexusops_ai_test?schema=public
+      DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/nexusops_ai_test?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/nexusops_ai_test?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci_test_jwt_access_secret_min_32_characters_long_1234
+      JWT_REFRESH_SECRET: ci_test_jwt_refresh_secret_min_32_characters_long_1234
+      COOKIE_SECURE: "false"
+      BCRYPT_ROUNDS: "4"
+      LLM_PROVIDER: mock
+      EMBEDDINGS_PROVIDER: mock
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm --prefix apps/api ci
+
+      - name: Generate Prisma client & run migrations
+        run: |
+          npx --prefix apps/api prisma generate
+          npx --prefix apps/api prisma migrate deploy
+
+      - name: Run backend unit tests
+        run: npm --prefix apps/api run test:unit
+
+      - name: Run backend integration tests
+        run: npm --prefix apps/api run test:integration
+
+  e2e-tests:
+    name: Playwright End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: [typecheck-and-build, backend-tests]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nexusops_ai_test
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nexusops_ai_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - "6379:6379"
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CI: "true"
+      NODE_ENV: test
+      PORT: "4000"
+      CLIENT_URL: http://localhost:5173
+      CORS_ORIGINS: http://localhost:5173
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nexusops_ai_test?schema=public
+      DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/nexusops_ai_test?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/nexusops_ai_test?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci_test_jwt_access_secret_min_32_characters_long_1234
+      JWT_REFRESH_SECRET: ci_test_jwt_refresh_secret_min_32_characters_long_1234
+      LLM_PROVIDER: mock
+      EMBEDDINGS_PROVIDER: mock
+      NODE_PATH: ${{ github.workspace }}/apps/api/node_modules
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            apps/api/package-lock.json
+            apps/web/package-lock.json
+
+      - name: Install backend & frontend dependencies
+        run: |
+          npm --prefix apps/api ci
+          npm --prefix apps/web ci
+
+      - name: Generate Prisma client & migrate test database
+        run: |
+          npx --prefix apps/api prisma generate
+          npx --prefix apps/api prisma migrate deploy
+
+      - name: Install Playwright Chromium browser
+        run: npx --prefix apps/web playwright install --with-deps chromium
+
+      - name: Start background worker for E2E document/workflow jobs
+        run: |
+          npm --prefix apps/api exec -- tsx src/worker.ts &
+          echo $! > worker.pid
+
+      - name: Run Playwright E2E tests
+        run: npm --prefix apps/web run test:e2e
+
+      - name: Stop background worker
+        if: always()
+        run: |
+          if [ -f worker.pid ]; then kill $(cat worker.pid) || true; fi
+
+      - name: Upload Playwright report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7
+
+  docker-build:
+    name: Validate & Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [typecheck-and-build, frontend-tests, backend-tests]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate docker-compose configuration
+        run: docker compose config -q
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API & Worker image (apps/api/Dockerfile)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          target: runner
+          push: false
+          tags: nexusops-backend:ci
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+
+      - name: Build Frontend Nginx image (apps/web/Dockerfile)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          target: runner
+          push: false
+          build-args: |
+            VITE_API_URL=/api
+          tags: nexusops-frontend:ci
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max

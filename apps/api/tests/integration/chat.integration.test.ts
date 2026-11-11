@@ -23,8 +23,8 @@ describe("Integration: AI Chat Service & API Endpoints (Real Test DB)", () => {
   const mockLLM = new MockLLMProvider();
   const mockEmbeddings = new MockEmbeddingsProvider();
 
-  let empA: { id: string; email: string; role: Role; departmentId: string | null };
-  let empB: { id: string; email: string; role: Role; departmentId: string | null };
+  let empA: { id: string; email: string; role: Role; departmentId: string | null; organizationId: string | null };
+  let empB: { id: string; email: string; role: Role; departmentId: string | null; organizationId: string | null };
   let tokenA: string;
   let tokenB: string;
 
@@ -137,6 +137,7 @@ describe("Integration: AI Chat Service & API Endpoints (Real Test DB)", () => {
     // Create a session for User A
     const sessionA = await prisma.chatSession.create({
       data: {
+        organizationId: empA.organizationId!,
         userId: empA.id,
         title: "User A Sensitive Session",
       },

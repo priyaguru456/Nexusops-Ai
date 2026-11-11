@@ -22,13 +22,14 @@ import {
   ArrowRight,
   CalendarDays,
   Receipt,
+  Building2,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { searchApi, type SearchResultRequest, type SearchResultTask } from "../../features/search/api";
 import { useAuth } from "../../features/auth/AuthContext";
 import { toggleAppTheme } from "./ThemeToggle";
 import { Badge } from "../ui/badge";
-import type { Role } from "../../types/auth";
+import { hasRoleAccess, type Role } from "../../types/auth";
 
 export interface CommandPaletteProps {
   isOpen: boolean;
@@ -43,6 +44,7 @@ export interface NavigationCommand {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   roles: Role[];
+  exactRoles?: boolean;
   keywords: string[];
 }
 
@@ -216,6 +218,17 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps): React.
         keywords: ["admin", "audit", "security", "logs", "events", "compliance"],
       },
       {
+        id: "nav-super-admin-orgs",
+        type: "page",
+        title: "Organizations (Super Admin)",
+        subtitle: "Provision and govern multi-tenant workspaces",
+        href: "/super-admin/organizations",
+        icon: Building2,
+        roles: ["SUPER_ADMIN"],
+        exactRoles: true,
+        keywords: ["super admin", "organizations", "tenants", "multi-tenant"],
+      },
+      {
         id: "nav-settings",
         type: "page",
         title: "Settings",
@@ -232,7 +245,9 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps): React.
   // Available pages strictly filtered by user's role
   const allowedPages = useMemo(() => {
     if (!role) return [];
-    return allNavigationPages.filter((page) => page.roles.includes(role));
+    return allNavigationPages.filter((page) =>
+      hasRoleAccess(role, page.roles, page.exactRoles)
+    );
   }, [allNavigationPages, role]);
 
   // Actions available

@@ -25,6 +25,7 @@ export const RegisterPage: React.FC = () => {
     defaultValues: {
       name: "",
       email: "",
+      organizationSlug: "",
       password: "",
       confirmPassword: "",
     },
@@ -37,7 +38,12 @@ export const RegisterPage: React.FC = () => {
   const onSubmit = async (data: RegisterFormData) => {
     setServerError(null);
     try {
-      await registerAuth(data.name, data.email, data.password);
+      await registerAuth(
+        data.name,
+        data.email,
+        data.password,
+        data.organizationSlug?.trim() || undefined
+      );
       navigate("/dashboard", { replace: true });
     } catch (err: unknown) {
       if (err instanceof AxiosError && err.response?.data?.error) {
@@ -103,6 +109,23 @@ export const RegisterPage: React.FC = () => {
                 />
                 {errors.email && (
                   <p className="text-xs text-red-500 font-medium">{errors.email.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="organizationSlug">Organization Workspace Slug (Optional)</Label>
+                <Input
+                  id="organizationSlug"
+                  type="text"
+                  placeholder="default (leave blank for default org)"
+                  autoComplete="organization"
+                  error={!!errors.organizationSlug}
+                  {...register("organizationSlug")}
+                />
+                {errors.organizationSlug && (
+                  <p className="text-xs text-red-500 font-medium">
+                    {errors.organizationSlug.message}
+                  </p>
                 )}
               </div>
 

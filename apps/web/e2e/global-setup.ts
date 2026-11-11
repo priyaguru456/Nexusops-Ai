@@ -40,20 +40,44 @@ export default async function globalSetup() {
       );
     }
 
-    // 2. Department
+    // 2. Default Organization & Department
+    const defaultOrg = await prisma.organization.create({
+      data: {
+        id: "00000000-0000-4000-8000-000000000001",
+        name: "NexusOps Default",
+        slug: "default",
+        isActive: true,
+      },
+    });
+
     const itDept = await prisma.department.create({
-      data: { name: "Engineering" },
+      data: {
+        name: "Engineering",
+        organizationId: defaultOrg.id,
+      },
     });
 
     const passwordHash = await bcrypt.hash("Password123!", 10);
 
     // 3. Known users
-    const admin = await prisma.user.create({
+    await prisma.user.create({
+      data: {
+        name: "Platform Super Admin",
+        email: "superadmin@nexusops.com",
+        passwordHash,
+        role: Role.SUPER_ADMIN,
+        organizationId: null,
+        isActive: true,
+      },
+    });
+
+    await prisma.user.create({
       data: {
         name: "Alice Admin",
         email: "admin@nexusops.com",
         passwordHash,
         role: Role.ADMIN,
+        organizationId: defaultOrg.id,
         departmentId: itDept.id,
         isActive: true,
       },
@@ -65,17 +89,19 @@ export default async function globalSetup() {
         email: "manager@nexusops.com",
         passwordHash,
         role: Role.MANAGER,
+        organizationId: defaultOrg.id,
         departmentId: itDept.id,
         isActive: true,
       },
     });
 
-    const employee = await prisma.user.create({
+    await prisma.user.create({
       data: {
         name: "Charlie Employee",
         email: "employee@nexusops.com",
         passwordHash,
         role: Role.EMPLOYEE,
+        organizationId: defaultOrg.id,
         departmentId: itDept.id,
         managerId: manager.id,
         isActive: true,
@@ -83,9 +109,10 @@ export default async function globalSetup() {
     });
 
     // 4. Seed approval flow
-    const flow = await prisma.approvalFlow.create({
+    await prisma.approvalFlow.create({
       data: {
         name: "Standard IT Request Flow",
+        organizationId: defaultOrg.id,
         category: RequestCategory.IT,
         steps: {
           create: [{ stepOrder: 1, approverRole: Role.MANAGER }],
@@ -94,8 +121,9 @@ export default async function globalSetup() {
     });
 
     console.log("[E2E Global Setup] Test database seeded successfully.");
-  } catch (err: any) {
-    console.warn(`[E2E Global Setup] Note: DB setup skipped or failed: ${err.message}`);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[E2E Global Setup] Note: DB setup skipped or failed: ${message}`);
   } finally {
     await prisma.$disconnect();
   }

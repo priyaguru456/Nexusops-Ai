@@ -167,11 +167,12 @@ export class ApprovalEscalationService {
       const departmentId =
         entityDetails?.requester?.departmentId ?? step.request?.requester?.departmentId ?? null;
 
-      // 2. Identify active admins for next-level escalation
+      // 2. Identify active admins for next-level escalation within the step's organization
       const activeAdmins = await tx.user.findMany({
         where: {
           role: Role.ADMIN,
           isActive: true,
+          ...(step.organizationId ? { organizationId: step.organizationId } : {}),
         },
         select: { id: true },
       });
@@ -180,7 +181,7 @@ export class ApprovalEscalationService {
         .map((a) => a.id)
         .filter((id) => id !== requesterId);
 
-      // 3. Identify current approvers for reminder
+      // 3. Identify current approvers for reminder within the step's organization
       let approverUserIds: string[] = [];
       if (step.approverId) {
         approverUserIds = [step.approverId];
@@ -189,6 +190,7 @@ export class ApprovalEscalationService {
           where: {
             role: step.approverRole,
             isActive: true,
+            ...(step.organizationId ? { organizationId: step.organizationId } : {}),
             ...(departmentId ? { departmentId } : {}),
           },
           select: { id: true },

@@ -1,22 +1,25 @@
 import { prisma } from "../../lib/prisma";
+import { DEFAULT_ORGANIZATION_ID } from "../../lib/tenant";
 import { Prisma, RequestCategory, Role, ApprovalStatus, RequestStatus } from "@prisma/client";
 
 export class ApprovalRepository {
   /**
-   * Finds the active approval flow matching a request's category and amount range.
+   * Finds the active approval flow matching a request's category and amount range within an organization.
    * If amount is null, looks for an active flow covering 0 (minAmount = 0).
    * Returns null if no active flow matches (indicating fallback).
    */
   async findMatchingFlow(
     category: RequestCategory,
     amount?: number | null,
-    tx?: Prisma.TransactionClient
+    tx?: Prisma.TransactionClient,
+    organizationId?: string
   ) {
     const client = tx || prisma;
     const flows = await client.approvalFlow.findMany({
       where: {
         category,
         isActive: true,
+        ...(organizationId ? { organizationId } : {}),
       },
       include: {
         steps: {
@@ -69,12 +72,13 @@ export class ApprovalRepository {
   }
 
   async listFlows(
-    filters?: { category?: RequestCategory; isActive?: boolean },
+    filters?: { category?: RequestCategory; isActive?: boolean; organizationId?: string },
     tx?: Prisma.TransactionClient
   ) {
     const client = tx || prisma;
     return client.approvalFlow.findMany({
       where: {
+        ...(filters?.organizationId ? { organizationId: filters.organizationId } : {}),
         ...(filters?.category ? { category: filters.category } : {}),
         ...(filters?.isActive !== undefined ? { isActive: filters.isActive } : {}),
       },
@@ -141,13 +145,15 @@ export class ApprovalRepository {
   async findActiveFlowsByCategory(
     category: RequestCategory,
     excludeFlowId?: string,
-    tx?: Prisma.TransactionClient
+    tx?: Prisma.TransactionClient,
+    organizationId?: string
   ) {
     const client = tx || prisma;
     return client.approvalFlow.findMany({
       where: {
         category,
         isActive: true,
+        ...(organizationId ? { organizationId } : {}),
         ...(excludeFlowId ? { id: { not: excludeFlowId } } : {}),
       },
       select: {
@@ -167,6 +173,7 @@ export class ApprovalRepository {
       minAmount: number;
       maxAmount?: number | null;
       isActive?: boolean;
+      organizationId?: string;
       steps: Array<{
         stepOrder: number;
         approverRole?: Role | null;
@@ -180,6 +187,7 @@ export class ApprovalRepository {
       data: {
         name: data.name,
         category: data.category,
+        organizationId: data.organizationId ?? DEFAULT_ORGANIZATION_ID,
         minAmount: new Prisma.Decimal(data.minAmount),
         maxAmount:
           data.maxAmount !== null && data.maxAmount !== undefined
@@ -310,6 +318,7 @@ export class ApprovalRepository {
           entityType?: string;
           entityId: string;
           requestId?: string | null;
+          organizationId?: string;
           steps: Array<{ stepOrder: number; approverRole: Role; approverId?: string | null }>;
         },
     stepsParam?: Array<{ stepOrder: number; approverRole: Role; approverId?: string | null }>,
@@ -318,6 +327,7 @@ export class ApprovalRepository {
     let entityType = "REQUEST";
     let entityId: string;
     let requestId: string | null = null;
+    let organizationId: string | undefined;
     let steps: Array<{ stepOrder: number; approverRole: Role; approverId?: string | null }>;
     let client: Prisma.TransactionClient;
 
@@ -336,14 +346,18 @@ export class ApprovalRepository {
           : entityType === "REQUEST"
           ? entityId
           : null;
+      organizationId = paramsOrRequestId.organizationId;
       steps = paramsOrRequestId.steps;
       client = (stepsParam as unknown as Prisma.TransactionClient) || tx || prisma;
     }
+
+    const resolvedOrganizationId = organizationId ?? DEFAULT_ORGANIZATION_ID;
 
     const records = steps.map((s) => ({
       entityType,
       entityId,
       requestId,
+      organizationId: resolvedOrganizationId,
       stepOrder: s.stepOrder,
       approverRole: s.approverRole,
       approverId: s.approverId ?? null,
@@ -400,11 +414,15 @@ export class ApprovalRepository {
     });
   }
 
-  async findActivePendingCandidateSteps(tx?: Prisma.TransactionClient) {
+  async findActivePendingCandidateSteps(
+    tx?: Prisma.TransactionClient,
+    organizationId?: string
+  ) {
     const client = tx || prisma;
     return client.approvalStep.findMany({
       where: {
         status: ApprovalStatus.PENDING,
+        ...(organizationId ? { organizationId } : {}),
         OR: [
           {
             entityType: "REQUEST",

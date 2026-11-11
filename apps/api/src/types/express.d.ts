@@ -6,10 +6,17 @@ export interface AuthenticatedUser {
   email: string;
   role: Role;
   isActive: boolean;
+  organizationId: string | null;
   departmentId: string | null;
   managerId: string | null;
   createdAt: Date;
   updatedAt: Date;
+  organization?: {
+    id: string;
+    name: string;
+    slug: string;
+    isActive: boolean;
+  } | null;
 }
 
 declare global {

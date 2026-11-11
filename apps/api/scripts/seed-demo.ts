@@ -28,20 +28,33 @@ async function seedDemoData() {
   console.log("Starting demo analytics dataset generation (spread over last 60 days)...");
 
   // 1. Ensure basic departments exist
+  const DEFAULT_ORGANIZATION_ID = "00000000-0000-4000-8000-000000000001";
+
+  const defaultOrg = await prisma.organization.upsert({
+    where: { slug: "default" },
+    update: { name: "NexusOps Default", isActive: true },
+    create: {
+      id: DEFAULT_ORGANIZATION_ID,
+      name: "NexusOps Default",
+      slug: "default",
+      isActive: true,
+    },
+  });
+
   const deptIT = await prisma.department.upsert({
-    where: { name: "IT" },
+    where: { organizationId_name: { organizationId: defaultOrg.id, name: "IT" } },
     update: {},
-    create: { name: "IT" },
+    create: { name: "IT", organizationId: defaultOrg.id },
   });
   const deptHR = await prisma.department.upsert({
-    where: { name: "HR" },
+    where: { organizationId_name: { organizationId: defaultOrg.id, name: "HR" } },
     update: {},
-    create: { name: "HR" },
+    create: { name: "HR", organizationId: defaultOrg.id },
   });
   const deptFinance = await prisma.department.upsert({
-    where: { name: "Finance" },
+    where: { organizationId_name: { organizationId: defaultOrg.id, name: "Finance" } },
     update: {},
-    create: { name: "Finance" },
+    create: { name: "Finance", organizationId: defaultOrg.id },
   });
 
   const depts = [deptIT, deptHR, deptFinance];
@@ -57,6 +70,7 @@ async function seedDemoData() {
       email: "admin@nexusops.com",
       passwordHash,
       role: Role.ADMIN,
+      organizationId: defaultOrg.id,
       departmentId: deptIT.id,
     },
   });
@@ -69,6 +83,7 @@ async function seedDemoData() {
       email: "manager.it@nexusops.com",
       passwordHash,
       role: Role.MANAGER,
+      organizationId: defaultOrg.id,
       departmentId: deptIT.id,
     },
   });
@@ -81,6 +96,7 @@ async function seedDemoData() {
       email: "manager.hr@nexusops.com",
       passwordHash,
       role: Role.MANAGER,
+      organizationId: defaultOrg.id,
       departmentId: deptHR.id,
     },
   });
@@ -93,6 +109,7 @@ async function seedDemoData() {
       email: "employee.it@nexusops.com",
       passwordHash,
       role: Role.EMPLOYEE,
+      organizationId: defaultOrg.id,
       departmentId: deptIT.id,
     },
   });
@@ -105,6 +122,7 @@ async function seedDemoData() {
       email: "employee.hr@nexusops.com",
       passwordHash,
       role: Role.EMPLOYEE,
+      organizationId: defaultOrg.id,
       departmentId: deptHR.id,
     },
   });
@@ -117,6 +135,7 @@ async function seedDemoData() {
       email: "employee.fin@nexusops.com",
       passwordHash,
       role: Role.EMPLOYEE,
+      organizationId: defaultOrg.id,
       departmentId: deptFinance.id,
     },
   });
@@ -196,6 +215,7 @@ async function seedDemoData() {
 
     const wr = await prisma.workRequest.create({
       data: {
+        organizationId: defaultOrg.id,
         title: `[Demo] ${category} Request #${1000 + i}`,
         description: `Simulated workplace request for ${category.toLowerCase()} resources.`,
         category,
@@ -225,6 +245,8 @@ async function seedDemoData() {
 
       await prisma.approvalStep.create({
         data: {
+          organizationId: defaultOrg.id,
+          entityId: wr.id,
           requestId: wr.id,
           stepOrder: 1,
           approverRole: approver.role,
@@ -271,6 +293,7 @@ async function seedDemoData() {
 
     await prisma.task.create({
       data: {
+        organizationId: defaultOrg.id,
         title: `[Demo] Action Item for ${linkedRequest.category} #${i + 1}`,
         description: `Operational task generated for fulfillment.`,
         status,
@@ -298,6 +321,7 @@ async function seedDemoData() {
 
     const session = await prisma.chatSession.create({
       data: {
+        organizationId: defaultOrg.id,
         userId: user.id,
         title: `[Demo] Policy Inquiry #${i + 1}`,
         createdAt: sessionCreatedAt,

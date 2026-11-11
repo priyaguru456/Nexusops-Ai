@@ -11,6 +11,12 @@ import { AppError } from "../../src/lib/errors";
 
 vi.mock("../../src/lib/prisma", () => ({
   prisma: {
+    user: {
+      findUnique: vi.fn().mockResolvedValue({
+        organizationId: "00000000-0000-4000-8000-000000000001",
+      }),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     notification: {
       create: vi.fn(),
       createMany: vi.fn(),
@@ -58,6 +64,7 @@ describe("Notification Center: Unit Tests & User Isolation", () => {
       expect(prisma.notification.create).toHaveBeenCalledWith({
         data: {
           userId: "user-1",
+          organizationId: "00000000-0000-4000-8000-000000000001",
           type: "TASK_ASSIGNED",
           title: "Task Assigned",
           message: "You have been assigned to task 'Fix bug'",
