@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Role, LeaveType, LeaveStatus } from "@prisma/client";
 import { leaveService } from "../../src/modules/leaves/leave.service";
 import { leaveRepository } from "../../src/modules/leaves/leave.repository";
@@ -114,6 +114,12 @@ describe("Leave Management - Backend Unit Tests", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-10T10:00:00.000Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe("1. Working Days Calculation Utilities", () => {

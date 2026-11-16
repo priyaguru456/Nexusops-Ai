@@ -1,7 +1,28 @@
 import { z } from "zod";
 
+const ALLOWED_USERNAMES = new Set([
+  "admin",
+  "superadmin",
+  "super_admin",
+  "manager",
+  "employee",
+  "demo",
+  "user",
+]);
+
 export const loginSchema = z.object({
-  email: z.string().trim().email("Please enter a valid email address"),
+  email: z
+    .string()
+    .trim()
+    .min(1, "Please enter a valid email address")
+    .refine(
+      (val) => {
+        const lower = val.toLowerCase();
+        if (ALLOWED_USERNAMES.has(lower)) return true;
+        return z.string().email().safeParse(val).success;
+      },
+      { message: "Please enter a valid email address" }
+    ),
   password: z.string().min(1, "Password is required"),
 });
 

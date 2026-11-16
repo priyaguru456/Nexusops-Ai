@@ -59,7 +59,7 @@ ALTER TABLE "Survey" ADD COLUMN IF NOT EXISTS "organizationId" TEXT;
 
 -- Step 2: Backfill existing rows with the Default Organization
 UPDATE "Department" SET "organizationId" = '00000000-0000-4000-8000-000000000001' WHERE "organizationId" IS NULL;
-UPDATE "User" SET "organizationId" = '00000000-0000-4000-8000-000000000001' WHERE "organizationId" IS NULL AND "role" <> 'SUPER_ADMIN';
+UPDATE "User" SET "organizationId" = '00000000-0000-4000-8000-000000000001' WHERE "organizationId" IS NULL AND "role"::text <> 'SUPER_ADMIN';
 UPDATE "WorkRequest" SET "organizationId" = '00000000-0000-4000-8000-000000000001' WHERE "organizationId" IS NULL;
 UPDATE "Task" SET "organizationId" = '00000000-0000-4000-8000-000000000001' WHERE "organizationId" IS NULL;
 UPDATE "Comment" SET "organizationId" = '00000000-0000-4000-8000-000000000001' WHERE "organizationId" IS NULL;

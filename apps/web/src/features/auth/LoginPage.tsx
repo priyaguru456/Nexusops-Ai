@@ -22,6 +22,7 @@ export const LoginPage: React.FC = () => {
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -30,6 +31,12 @@ export const LoginPage: React.FC = () => {
       password: "",
     },
   });
+
+  const selectRole = (email: string) => {
+    setValue("email", email, { shouldValidate: true });
+    setValue("password", "Password@123", { shouldValidate: true });
+    setServerError(null);
+  };
 
   if (!authLoading && isAuthenticated) {
     return <Navigate to={from} replace />;
@@ -41,8 +48,23 @@ export const LoginPage: React.FC = () => {
       await login(data.email, data.password);
       navigate(from, { replace: true });
     } catch (err: unknown) {
-      if (err instanceof AxiosError && err.response?.data?.error) {
-        setServerError(err.response.data.error);
+      if (err instanceof AxiosError && err.response?.data) {
+        const resData = err.response.data as {
+          error?: string;
+          code?: string;
+          details?: { fieldErrors?: Record<string, string[]>; formErrors?: string[] };
+        };
+        if (resData.details?.fieldErrors && Object.keys(resData.details.fieldErrors).length > 0) {
+          const firstField = Object.keys(resData.details.fieldErrors)[0];
+          const fieldMsg = resData.details.fieldErrors[firstField]?.[0];
+          setServerError(fieldMsg ? `${resData.error || "Validation failed"}: ${fieldMsg}` : resData.error || "Validation failed");
+        } else if (resData.code) {
+          setServerError(`${resData.error || "Database error"} (${resData.code})`);
+        } else if (resData.error) {
+          setServerError(resData.error);
+        } else {
+          setServerError("Failed to sign in. Please verify your credentials.");
+        }
       } else {
         setServerError("Failed to sign in. Please verify your credentials.");
       }
@@ -70,6 +92,46 @@ export const LoginPage: React.FC = () => {
             <CardDescription>Enter your work email to access your account</CardDescription>
           </CardHeader>
           <CardContent>
+            <div className="mb-4">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">
+                Quick Sign-in by Role:
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => selectRole("admin@nexusops.com")}
+                  className="text-xs px-2.5 py-1.5 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/60 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-medium hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors text-left flex items-center justify-between"
+                >
+                  <span>🛡️ Admin</span>
+                  <span className="text-[10px] opacity-75 font-mono">Fill</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => selectRole("superadmin@nexusops.com")}
+                  className="text-xs px-2.5 py-1.5 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/60 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 font-medium hover:bg-purple-100 dark:hover:bg-purple-900/60 transition-colors text-left flex items-center justify-between"
+                >
+                  <span>👑 Super Admin</span>
+                  <span className="text-[10px] opacity-75 font-mono">Fill</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => selectRole("manager.it@nexusops.com")}
+                  className="text-xs px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/60 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-medium hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-colors text-left flex items-center justify-between"
+                >
+                  <span>💼 IT Manager</span>
+                  <span className="text-[10px] opacity-75 font-mono">Fill</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => selectRole("employee.it@nexusops.com")}
+                  className="text-xs px-2.5 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50/60 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-medium hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors text-left flex items-center justify-between"
+                >
+                  <span>👤 Employee</span>
+                  <span className="text-[10px] opacity-75 font-mono">Fill</span>
+                </button>
+              </div>
+            </div>
+
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
               {serverError && (
                 <Alert variant="destructive">
@@ -118,6 +180,12 @@ export const LoginPage: React.FC = () => {
               <Button type="submit" className="w-full" isLoading={isSubmitting}>
                 Sign In
               </Button>
+
+              <div className="rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 text-xs text-slate-600 dark:text-slate-400 space-y-1">
+                <p className="font-semibold text-slate-700 dark:text-slate-300">Demo Credentials:</p>
+                <p>Email: <code className="text-indigo-600 dark:text-indigo-400 font-mono select-all">admin@nexusops.com</code></p>
+                <p>Password: <code className="text-indigo-600 dark:text-indigo-400 font-mono select-all">Password@123</code></p>
+              </div>
             </form>
           </CardContent>
           <CardFooter className="justify-center border-t border-slate-100 dark:border-slate-800 pt-4">

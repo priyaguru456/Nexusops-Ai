@@ -62,9 +62,23 @@ async function seedDemoData() {
   // 2. Ensure base users exist
   const passwordHash = await bcrypt.hash("Password@123", 10);
 
+  await prisma.user.upsert({
+    where: { email: "superadmin@nexusops.com" },
+    update: { passwordHash, isActive: true },
+    create: {
+      name: "Platform Super Admin",
+      email: "superadmin@nexusops.com",
+      passwordHash,
+      role: Role.SUPER_ADMIN,
+      organizationId: null,
+      departmentId: null,
+      isActive: true,
+    },
+  });
+
   const admin = await prisma.user.upsert({
     where: { email: "admin@nexusops.com" },
-    update: {},
+    update: { passwordHash, isActive: true },
     create: {
       name: "Admin User",
       email: "admin@nexusops.com",
@@ -77,7 +91,7 @@ async function seedDemoData() {
 
   const mgrIT = await prisma.user.upsert({
     where: { email: "manager.it@nexusops.com" },
-    update: {},
+    update: { passwordHash, isActive: true },
     create: {
       name: "IT Manager",
       email: "manager.it@nexusops.com",

@@ -52,10 +52,10 @@ export class NotificationRepository {
     );
     const orgMap = new Map<string, string>();
     if (missingUserIds.length > 0) {
-      const users = await prisma.user.findMany({
+      const users = (await prisma.user.findMany({
         where: { id: { in: missingUserIds } },
         select: { id: true, organizationId: true },
-      });
+      })) || [];
       for (const u of users) {
         if (u.organizationId) {
           orgMap.set(u.id, u.organizationId);

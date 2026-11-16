@@ -1,5 +1,19 @@
 import { test, expect, Page, Browser } from "@playwright/test";
 import path from "path";
+import fs from "fs";
+
+function getFixturePath(): string {
+  const candidates = [
+    path.resolve(__dirname, "tests/fixtures/leave-policy.pdf"),
+    path.resolve(__dirname, "../../../tests/fixtures/leave-policy.pdf"),
+    path.resolve(process.cwd(), "tests/fixtures/leave-policy.pdf"),
+    path.resolve(process.cwd(), "e2e/tests/fixtures/leave-policy.pdf"),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return candidates[0];
+}
 
 // Helper for authenticating a browser page
 async function loginAs(page: Page, email: string, password = "Password123!") {
@@ -85,7 +99,7 @@ test.describe("NexusOps E2E Suite: Multi-Role Workflow & Security", () => {
     // Open upload modal
     await adminPage.getByRole("button", { name: /upload document|upload/i }).click();
 
-    const fixturePath = path.resolve(__dirname, "tests/fixtures/leave-policy.pdf");
+    const fixturePath = getFixturePath();
     const fileChooserPromise = adminPage.waitForEvent("filechooser");
     await adminPage.getByText(/drag and drop|browse|upload/i).first().click();
     const fileChooser = await fileChooserPromise;
@@ -136,7 +150,7 @@ test.describe("NexusOps E2E Suite: Multi-Role Workflow & Security", () => {
     await adminPage.goto("/documents");
     await adminPage.getByRole("button", { name: /upload document|upload/i }).click();
 
-    const fixturePath = path.resolve(__dirname, "tests/fixtures/leave-policy.pdf");
+    const fixturePath = getFixturePath();
     const fileChooserPromise = adminPage.waitForEvent("filechooser");
     await adminPage.getByText(/drag and drop|browse|upload/i).first().click();
     const fileChooser = await fileChooserPromise;

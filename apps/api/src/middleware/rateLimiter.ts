@@ -22,7 +22,7 @@ export function resetRateLimiters(): void {
 
 export const loginRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 5,
+  limit: env.NODE_ENV === "development" ? 100 : 5,
   store: loginStore,
   standardHeaders: true,
   legacyHeaders: false,

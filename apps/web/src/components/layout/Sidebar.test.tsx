@@ -114,4 +114,21 @@ describe("React Testing Library: Role-based Sidebar Navigation Menu", () => {
     expect(screen.getByRole("link", { name: /announcements/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /settings/i })).toBeInTheDocument();
   });
+
+  it("renders exact full menu items including Organizations for SUPER_ADMIN role", () => {
+    (AuthContextModule.useAuth as any).mockReturnValue({
+      user: { id: "4", name: "Sam SuperAdmin", email: "sam@test.com", role: "SUPER_ADMIN" },
+      role: "SUPER_ADMIN",
+      logout: vi.fn(),
+    });
+
+    renderLayout();
+
+    // Super Admin sees navigation items including Organizations
+    expect(screen.getByRole("link", { name: /dashboard/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /organizations/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /approvals/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /user management/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /audit logs/i })).toBeInTheDocument();
+  });
 });

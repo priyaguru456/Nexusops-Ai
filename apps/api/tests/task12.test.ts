@@ -54,12 +54,21 @@ vi.mock("../src/lib/prisma", () => {
 });
 
 describe("Task 12: User Management, Profile, Search, Escalation & Route Security Tests", () => {
+  const defaultOrg = {
+    id: "00000000-0000-4000-8000-000000000001",
+    name: "NexusOps Default",
+    slug: "default",
+    isActive: true,
+  };
+
   const admin1 = {
     id: "a0000000-0000-4000-8000-000000000001",
     name: "Primary Admin",
     email: "admin1@nexusops.com",
     role: Role.ADMIN,
     isActive: true,
+    organizationId: defaultOrg.id,
+    organization: defaultOrg,
     departmentId: null,
     managerId: null,
     passwordHash: "$2a$10$abcdefghijklmnopqrstuvwxyz123456",
@@ -71,6 +80,8 @@ describe("Task 12: User Management, Profile, Search, Escalation & Route Security
     email: "admin2@nexusops.com",
     role: Role.ADMIN,
     isActive: true,
+    organizationId: defaultOrg.id,
+    organization: defaultOrg,
     departmentId: null,
     managerId: null,
     passwordHash: "$2a$10$abcdefghijklmnopqrstuvwxyz123456",
@@ -82,6 +93,8 @@ describe("Task 12: User Management, Profile, Search, Escalation & Route Security
     email: "jane@nexusops.com",
     role: Role.EMPLOYEE,
     isActive: true,
+    organizationId: defaultOrg.id,
+    organization: defaultOrg,
     departmentId: "dept-eng",
     managerId: null,
     passwordHash: "$2a$10$abcdefghijklmnopqrstuvwxyz123456",
@@ -89,6 +102,7 @@ describe("Task 12: User Management, Profile, Search, Escalation & Route Security
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(prisma.user.findMany).mockResolvedValue([]);
   });
 
   describe("1. Last Active Admin Protection", () => {
@@ -438,6 +452,10 @@ describe("Task 12: User Management, Profile, Search, Escalation & Route Security
         "POST /api/auth/login",
         "POST /api/auth/refresh",
         "POST /api/auth/logout",
+        "POST /api/auth/forgot-password",
+        "POST /api/auth/reset-password",
+        "GET /api/docs.json",
+        "GET /api/docs",
       ]);
 
       interface DiscoveredRoute {

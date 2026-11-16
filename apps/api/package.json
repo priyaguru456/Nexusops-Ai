@@ -13,7 +13,7 @@
     "start": "node dist/server.js",
     "start:worker": "node dist/worker.js",
     "test": "vitest run",
-    "test:unit": "vitest run tests/unit tests/chunker.test.ts tests/errorHandler.test.ts tests/documents.test.ts tests/sse-parser-and-citations.test.ts",
+    "test:unit": "vitest run tests/unit tests/chunker.test.ts tests/errorHandler.test.ts tests/documents.test.ts tests/sse-parser-and-citations.test.ts tests/task12.test.ts tests/analytics.test.ts tests/retrieval.test.ts",
     "test:integration": "vitest run tests/integration",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",

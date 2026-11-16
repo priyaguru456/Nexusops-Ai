@@ -8,8 +8,29 @@ export const registerSchema = z.object({
   organizationSlug: z.string().trim().min(2).max(64).optional(),
 });
 
+const ALLOWED_USERNAMES = new Set([
+  "admin",
+  "superadmin",
+  "super_admin",
+  "manager",
+  "employee",
+  "demo",
+  "user",
+]);
+
 export const loginSchema = z.object({
-  email: z.string().trim().email("Invalid email address"),
+  email: z
+    .string()
+    .trim()
+    .min(1, "Email or username is required")
+    .refine(
+      (val) => {
+        const lower = val.toLowerCase();
+        if (ALLOWED_USERNAMES.has(lower)) return true;
+        return z.string().email().safeParse(val).success;
+      },
+      { message: "Invalid email address or role username" }
+    ),
   password: z.string().min(1, "Password is required"),
 });
 
