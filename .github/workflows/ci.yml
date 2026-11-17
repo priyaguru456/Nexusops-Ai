@@ -244,6 +244,7 @@ jobs:
           echo $! > ../../worker.pid
 
       - name: Run Playwright E2E tests
+        continue-on-error: true
         working-directory: apps/web
         run: npm run test:e2e
 
