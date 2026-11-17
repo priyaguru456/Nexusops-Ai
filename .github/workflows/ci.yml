@@ -12,6 +12,9 @@ concurrency:
 
 env:
   NODE_VERSION: "20"
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nexusops_ai?schema=public
+  DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/nexusops_ai_test?schema=public
+  DIRECT_URL: postgresql://postgres:postgres@localhost:5432/nexusops_ai_test?schema=public
 
 jobs:
   typecheck-and-build:
@@ -128,7 +131,7 @@ jobs:
       PORT: "4000"
       CLIENT_URL: http://localhost:5173
       CORS_ORIGINS: http://localhost:5173
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nexusops_ai_test?schema=public
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nexusops_ai?schema=public
       DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/nexusops_ai_test?schema=public
       DIRECT_URL: postgresql://postgres:postgres@localhost:5432/nexusops_ai_test?schema=public
       REDIS_URL: redis://localhost:6379
@@ -157,7 +160,7 @@ jobs:
         working-directory: apps/api
         run: |
           npx prisma generate
-          npx prisma migrate deploy
+          DATABASE_URL="${DATABASE_URL_TEST}" npx prisma migrate deploy
 
       - name: Run backend unit tests
         working-directory: apps/api
