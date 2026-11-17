@@ -1,4 +1,4 @@
-import { beforeEach, afterEach, beforeAll } from "vitest";
+import { beforeEach, afterAll, beforeAll } from "vitest";
 import { prisma } from "../../src/lib/prisma";
 import { resetRateLimiters } from "../../src/middleware/rateLimiter";
 import { setLLMProvider, MockLLMProvider } from "../../src/lib/llm";
@@ -121,7 +121,7 @@ beforeEach(async () => {
   resetRateLimiters();
 });
 
-afterEach(async () => {
-  // If running against real DB, clean up between tests
+afterAll(async () => {
+  // If running against real DB, clean up after all tests in the file complete
   await truncateAllTables();
 });
