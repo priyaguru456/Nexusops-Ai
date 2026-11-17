@@ -31,22 +31,27 @@ jobs:
             apps/web/package-lock.json
 
       - name: Install backend dependencies
-        run: npm --prefix apps/api ci
+        working-directory: apps/api
+        run: npm ci
 
       - name: Generate Prisma client
-        run: npx --prefix apps/api prisma generate
+        working-directory: apps/api
+        run: npx prisma generate
 
       - name: Typecheck & build backend
+        working-directory: apps/api
         run: |
-          npm --prefix apps/api exec -- tsc --noEmit
-          npm --prefix apps/api run build
+          npx tsc --noEmit
+          npm run build
 
       - name: Install frontend dependencies
-        run: npm --prefix apps/web ci
+        working-directory: apps/web
+        run: npm ci
 
       - name: Lint frontend (report legacy warnings & fail on new auth/admin errors)
+        working-directory: apps/web
         run: |
-          npm --prefix apps/web exec -- eslint \
+          npx eslint \
             src/types/auth.ts \
             src/routes/ProtectedRoute.tsx \
             src/features/auth/ForgotPasswordPage.tsx \
@@ -63,10 +68,12 @@ jobs:
 
       - name: Run full ESLint report (non-blocking for legacy test casts)
         continue-on-error: true
-        run: npm --prefix apps/web run lint
+        working-directory: apps/web
+        run: npm run lint
 
       - name: Typecheck & build frontend
-        run: npm --prefix apps/web run build
+        working-directory: apps/web
+        run: npm run build
 
   frontend-tests:
     name: Frontend Unit & Component Tests
@@ -83,10 +90,12 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
 
       - name: Install frontend dependencies
-        run: npm --prefix apps/web ci
+        working-directory: apps/web
+        run: npm ci
 
       - name: Run Vitest frontend suite
-        run: npm --prefix apps/web run test
+        working-directory: apps/web
+        run: npm run test
 
   backend-tests:
     name: Backend Unit & Integration Tests
@@ -141,18 +150,22 @@ jobs:
           cache-dependency-path: apps/api/package-lock.json
 
       - name: Install backend dependencies
-        run: npm --prefix apps/api ci
+        working-directory: apps/api
+        run: npm ci
 
       - name: Generate Prisma client & run migrations
+        working-directory: apps/api
         run: |
-          npx --prefix apps/api prisma generate
-          npx --prefix apps/api prisma migrate deploy
+          npx prisma generate
+          npx prisma migrate deploy
 
       - name: Run backend unit tests
-        run: npm --prefix apps/api run test:unit
+        working-directory: apps/api
+        run: npm run test:unit
 
       - name: Run backend integration tests
-        run: npm --prefix apps/api run test:integration
+        working-directory: apps/api
+        run: npm run test:integration
 
   e2e-tests:
     name: Playwright End-to-End Tests
@@ -215,20 +228,24 @@ jobs:
           npm --prefix apps/web ci
 
       - name: Generate Prisma client & migrate test database
+        working-directory: apps/api
         run: |
-          npx --prefix apps/api prisma generate
-          npx --prefix apps/api prisma migrate deploy
+          npx prisma generate
+          npx prisma migrate deploy
 
       - name: Install Playwright Chromium browser
-        run: npx --prefix apps/web playwright install --with-deps chromium
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium
 
       - name: Start background worker for E2E document/workflow jobs
+        working-directory: apps/api
         run: |
-          npm --prefix apps/api exec -- tsx src/worker.ts &
-          echo $! > worker.pid
+          npx tsx src/worker.ts &
+          echo $! > ../../worker.pid
 
       - name: Run Playwright E2E tests
-        run: npm --prefix apps/web run test:e2e
+        working-directory: apps/web
+        run: npm run test:e2e
 
       - name: Stop background worker
         if: always()
