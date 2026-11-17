@@ -47,6 +47,16 @@ describe("AI Retrieval & Hybrid Search Tests (pgvector & RBAC)", () => {
     });
     const orgId = testOrg.id;
 
+    // Clean up any existing test documents or users for this org
+    try {
+      await prisma.documentChunk.deleteMany({
+        where: { organizationId: orgId },
+      });
+      await prisma.document.deleteMany({
+        where: { organizationId: orgId },
+      });
+    } catch {}
+
     // 2. Setup Departments in real test database
     const deptA = await prisma.department.create({
       data: { name: `Test Dept IT ${Date.now()}`, organizationId: orgId },
@@ -233,6 +243,8 @@ describe("AI Retrieval & Hybrid Search Tests (pgvector & RBAC)", () => {
         hasPgVector = false;
       }
 
+      await seedFixtures();
+
       // If pgvector extension is not compiled in host database, spyOn searchVectors to simulate vector query
       // while testing real database RBAC queries
       if (!hasPgVector) {
@@ -402,14 +414,6 @@ describe("AI Retrieval & Hybrid Search Tests (pgvector & RBAC)", () => {
   });
 
   describe("End-to-End Database Retrieval Tests (pgvector & RBAC)", () => {
-    beforeEach(async () => {
-      try {
-        await seedFixtures();
-      } catch (err) {
-        console.warn("seedFixtures failed in beforeEach:", err);
-      }
-    });
-
     it("CRITICAL RULE: a manager-only document is NEVER returned for an employee query", async () => {
       if (testDocIds.length === 0) return;
 
