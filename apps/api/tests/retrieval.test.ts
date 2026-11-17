@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { Role, DocVisibility, DocStatus, Prisma } from "@prisma/client";
 import { prisma } from "../src/lib/prisma";
 import {
@@ -30,6 +30,194 @@ describe("AI Retrieval & Hybrid Search Tests (pgvector & RBAC)", () => {
   const testUserIds: string[] = [];
   const testDeptIds: string[] = [];
 
+  async function seedFixtures() {
+    testDocIds.length = 0;
+    testUserIds.length = 0;
+    testDeptIds.length = 0;
+
+    // 1.5 Ensure test organization exists
+    const testOrg = await prisma.organization.upsert({
+      where: { slug: "retrieval-test-org" },
+      update: { isActive: true },
+      create: {
+        name: "Retrieval Test Org",
+        slug: "retrieval-test-org",
+        isActive: true,
+      },
+    });
+    const orgId = testOrg.id;
+
+    // 2. Setup Departments in real test database
+    const deptA = await prisma.department.create({
+      data: { name: `Test Dept IT ${Date.now()}`, organizationId: orgId },
+    });
+    const deptB = await prisma.department.create({
+      data: { name: `Test Dept HR ${Date.now()}`, organizationId: orgId },
+    });
+    deptAId = deptA.id;
+    deptBId = deptB.id;
+    testDeptIds.push(deptAId, deptBId);
+
+    // 3. Setup Users in real test database
+    adminUser = await prisma.user.create({
+      data: {
+        name: "Test Admin",
+        email: `admin-${Date.now()}@test.com`,
+        passwordHash: "hash",
+        role: Role.ADMIN,
+        organizationId: orgId,
+        departmentId: deptAId,
+      },
+    });
+    testUserIds.push(adminUser.id);
+
+    managerDeptA = await prisma.user.create({
+      data: {
+        name: "Manager Dept A",
+        email: `mgr-a-${Date.now()}@test.com`,
+        passwordHash: "hash",
+        role: Role.MANAGER,
+        organizationId: orgId,
+        departmentId: deptAId,
+      },
+    });
+    testUserIds.push(managerDeptA.id);
+
+    managerDeptB = await prisma.user.create({
+      data: {
+        name: "Manager Dept B",
+        email: `mgr-b-${Date.now()}@test.com`,
+        passwordHash: "hash",
+        role: Role.MANAGER,
+        organizationId: orgId,
+        departmentId: deptBId,
+      },
+    });
+    testUserIds.push(managerDeptB.id);
+
+    employeeDeptA = await prisma.user.create({
+      data: {
+        name: "Employee Dept A",
+        email: `emp-a-${Date.now()}@test.com`,
+        passwordHash: "hash",
+        role: Role.EMPLOYEE,
+        organizationId: orgId,
+        departmentId: deptAId,
+      },
+    });
+    testUserIds.push(employeeDeptA.id);
+
+    employeeDeptB = await prisma.user.create({
+      data: {
+        name: "Employee Dept B",
+        email: `emp-b-${Date.now()}@test.com`,
+        passwordHash: "hash",
+        role: Role.EMPLOYEE,
+        organizationId: orgId,
+        departmentId: deptBId,
+      },
+    });
+    testUserIds.push(employeeDeptB.id);
+
+    // Helper to create test document with chunk in real DB
+    async function createTestDocWithChunk(params: {
+      title: string;
+      visibility: DocVisibility;
+      status: DocStatus;
+      departmentId?: string;
+      content: string;
+    }) {
+      const doc = await prisma.document.create({
+        data: {
+          organizationId: orgId,
+          title: params.title,
+          fileName: `${params.title.toLowerCase().replace(/\s+/g, "_")}.txt`,
+          filePath: `test/${Date.now()}.txt`,
+          mimeType: "text/plain",
+          sizeBytes: 1024,
+          visibility: params.visibility,
+          status: params.status,
+          departmentId: params.departmentId || null,
+          uploadedById: adminUser.id,
+        },
+      });
+      testDocIds.push(doc.id);
+
+      const chunk = await prisma.documentChunk.create({
+        data: {
+          organizationId: orgId,
+          documentId: doc.id,
+          chunkIndex: 0,
+          pageNumber: 1,
+          content: params.content,
+          tokenCount: 40,
+        },
+      });
+
+      // If pgvector is present, store vector via raw SQL (pgvector)
+      if (hasPgVector) {
+        const fakeVector = mockProvider.generateDeterministicVector(params.content);
+        const vectorStr = formatVectorForPg(fakeVector);
+        await prisma.$executeRaw(
+          Prisma.sql`UPDATE "DocumentChunk" SET "embedding" = ${vectorStr}::vector WHERE "id" = ${chunk.id}`
+        );
+      }
+
+      return doc;
+    }
+
+    // Fixtures:
+    // Doc 1: ALL visibility, READY
+    await createTestDocWithChunk({
+      title: "Company General Policy",
+      visibility: DocVisibility.ALL,
+      status: DocStatus.READY,
+      content: "Company general employee handbook and code of conduct guidelines.",
+    });
+
+    // Doc 2: MANAGERS only, READY
+    await createTestDocWithChunk({
+      title: "Executive Compensation & Manager Bonus Guide",
+      visibility: DocVisibility.MANAGERS,
+      status: DocStatus.READY,
+      content: "Strictly confidential quarterly management bonuses and leadership stock options.",
+    });
+
+    // Doc 3: DEPARTMENT IT (Dept A), READY
+    await createTestDocWithChunk({
+      title: "IT Infrastructure Deployment Protocol",
+      visibility: DocVisibility.DEPARTMENT,
+      departmentId: deptAId,
+      status: DocStatus.READY,
+      content: "Engineering and IT department internal database deployment instructions.",
+    });
+
+    // Doc 4: DEPARTMENT HR (Dept B), READY
+    await createTestDocWithChunk({
+      title: "HR Employee Disciplinary Procedures",
+      visibility: DocVisibility.DEPARTMENT,
+      departmentId: deptBId,
+      status: DocStatus.READY,
+      content: "Human resources personnel disciplinary action matrix and review policies.",
+    });
+
+    // Doc 5: ADMIN_ONLY, READY
+    await createTestDocWithChunk({
+      title: "Root Security Keys and Audit Logs",
+      visibility: DocVisibility.ADMIN_ONLY,
+      status: DocStatus.READY,
+      content: "Master cryptographic root secrets and administrator forensic records.",
+    });
+
+    // Doc 6: ALL visibility, but UPLOADED (NOT READY)
+    await createTestDocWithChunk({
+      title: "Draft Future Roadmap (Not Ready)",
+      visibility: DocVisibility.ALL,
+      status: DocStatus.UPLOADED,
+      content: "Draft notes still processing, not yet indexed or approved for knowledge base.",
+    });
+  }
+
   beforeAll(async () => {
     // 1. Activate Mock Embeddings Provider for deterministic tests
     setEmbeddingsProvider(mockProvider);
@@ -44,188 +232,6 @@ describe("AI Retrieval & Hybrid Search Tests (pgvector & RBAC)", () => {
       } catch {
         hasPgVector = false;
       }
-
-      // 1.5 Ensure test organization exists
-      const testOrg = await prisma.organization.upsert({
-        where: { slug: "retrieval-test-org" },
-        update: { isActive: true },
-        create: {
-          name: "Retrieval Test Org",
-          slug: "retrieval-test-org",
-          isActive: true,
-        },
-      });
-      const orgId = testOrg.id;
-
-      // 2. Setup Departments in real test database
-      const deptA = await prisma.department.create({
-        data: { name: `Test Dept IT ${Date.now()}`, organizationId: orgId },
-      });
-      const deptB = await prisma.department.create({
-        data: { name: `Test Dept HR ${Date.now()}`, organizationId: orgId },
-      });
-      deptAId = deptA.id;
-      deptBId = deptB.id;
-      testDeptIds.push(deptAId, deptBId);
-
-      // 3. Setup Users in real test database
-      adminUser = await prisma.user.create({
-        data: {
-          name: "Test Admin",
-          email: `admin-${Date.now()}@test.com`,
-          passwordHash: "hash",
-          role: Role.ADMIN,
-          organizationId: orgId,
-          departmentId: deptAId,
-        },
-      });
-      testUserIds.push(adminUser.id);
-
-      managerDeptA = await prisma.user.create({
-        data: {
-          name: "Manager Dept A",
-          email: `mgr-a-${Date.now()}@test.com`,
-          passwordHash: "hash",
-          role: Role.MANAGER,
-          organizationId: orgId,
-          departmentId: deptAId,
-        },
-      });
-      testUserIds.push(managerDeptA.id);
-
-      managerDeptB = await prisma.user.create({
-        data: {
-          name: "Manager Dept B",
-          email: `mgr-b-${Date.now()}@test.com`,
-          passwordHash: "hash",
-          role: Role.MANAGER,
-          organizationId: orgId,
-          departmentId: deptBId,
-        },
-      });
-      testUserIds.push(managerDeptB.id);
-
-      employeeDeptA = await prisma.user.create({
-        data: {
-          name: "Employee Dept A",
-          email: `emp-a-${Date.now()}@test.com`,
-          passwordHash: "hash",
-          role: Role.EMPLOYEE,
-          organizationId: orgId,
-          departmentId: deptAId,
-        },
-      });
-      testUserIds.push(employeeDeptA.id);
-
-      employeeDeptB = await prisma.user.create({
-        data: {
-          name: "Employee Dept B",
-          email: `emp-b-${Date.now()}@test.com`,
-          passwordHash: "hash",
-          role: Role.EMPLOYEE,
-          organizationId: orgId,
-          departmentId: deptBId,
-        },
-      });
-      testUserIds.push(employeeDeptB.id);
-
-      // Helper to create test document with chunk in real DB
-      async function createTestDocWithChunk(params: {
-        title: string;
-        visibility: DocVisibility;
-        status: DocStatus;
-        departmentId?: string;
-        content: string;
-      }) {
-        const doc = await prisma.document.create({
-          data: {
-            organizationId: orgId,
-            title: params.title,
-            fileName: `${params.title.toLowerCase().replace(/\s+/g, "_")}.txt`,
-            filePath: `test/${Date.now()}.txt`,
-            mimeType: "text/plain",
-            sizeBytes: 1024,
-            visibility: params.visibility,
-            status: params.status,
-            departmentId: params.departmentId || null,
-            uploadedById: adminUser.id,
-          },
-        });
-        testDocIds.push(doc.id);
-
-        const chunk = await prisma.documentChunk.create({
-          data: {
-            organizationId: orgId,
-            documentId: doc.id,
-            chunkIndex: 0,
-            pageNumber: 1,
-            content: params.content,
-            tokenCount: 40,
-          },
-        });
-
-        // If pgvector is present, store vector via raw SQL (pgvector)
-        if (hasPgVector) {
-          const fakeVector = mockProvider.generateDeterministicVector(params.content);
-          const vectorStr = formatVectorForPg(fakeVector);
-          await prisma.$executeRaw(
-            Prisma.sql`UPDATE "DocumentChunk" SET "embedding" = ${vectorStr}::vector WHERE "id" = ${chunk.id}`
-          );
-        }
-
-        return doc;
-      }
-
-      // Fixtures:
-      // Doc 1: ALL visibility, READY
-      await createTestDocWithChunk({
-        title: "Company General Policy",
-        visibility: DocVisibility.ALL,
-        status: DocStatus.READY,
-        content: "Company general employee handbook and code of conduct guidelines.",
-      });
-
-      // Doc 2: MANAGERS only, READY
-      await createTestDocWithChunk({
-        title: "Executive Compensation & Manager Bonus Guide",
-        visibility: DocVisibility.MANAGERS,
-        status: DocStatus.READY,
-        content: "Strictly confidential quarterly management bonuses and leadership stock options.",
-      });
-
-      // Doc 3: DEPARTMENT IT (Dept A), READY
-      await createTestDocWithChunk({
-        title: "IT Infrastructure Deployment Protocol",
-        visibility: DocVisibility.DEPARTMENT,
-        departmentId: deptAId,
-        status: DocStatus.READY,
-        content: "Engineering and IT department internal database deployment instructions.",
-      });
-
-      // Doc 4: DEPARTMENT HR (Dept B), READY
-      await createTestDocWithChunk({
-        title: "HR Employee Disciplinary Procedures",
-        visibility: DocVisibility.DEPARTMENT,
-        departmentId: deptBId,
-        status: DocStatus.READY,
-        content: "Human resources personnel disciplinary action matrix and review policies.",
-      });
-
-      // Doc 5: ADMIN_ONLY, READY
-      await createTestDocWithChunk({
-        title: "Root Security Keys and Audit Logs",
-        visibility: DocVisibility.ADMIN_ONLY,
-        status: DocStatus.READY,
-        content: "Master cryptographic root secrets and administrator forensic records.",
-      });
-
-      // Doc 6: ALL visibility, but UPLOADED (NOT READY)
-      await createTestDocWithChunk({
-        title: "Draft Future Roadmap (Not Ready)",
-        visibility: DocVisibility.ALL,
-        status: DocStatus.UPLOADED,
-        content: "Draft notes still processing, not yet indexed or approved for knowledge base.",
-      });
 
       // If pgvector extension is not compiled in host database, spyOn searchVectors to simulate vector query
       // while testing real database RBAC queries
@@ -396,6 +402,14 @@ describe("AI Retrieval & Hybrid Search Tests (pgvector & RBAC)", () => {
   });
 
   describe("End-to-End Database Retrieval Tests (pgvector & RBAC)", () => {
+    beforeEach(async () => {
+      try {
+        await seedFixtures();
+      } catch (err) {
+        console.warn("seedFixtures failed in beforeEach:", err);
+      }
+    });
+
     it("CRITICAL RULE: a manager-only document is NEVER returned for an employee query", async () => {
       if (testDocIds.length === 0) return;
 
