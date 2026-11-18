@@ -1,5 +1,9 @@
 # NexusOps AI - Enterprise Operations Platform
 
+<div align="center">
+  <img src="apps/web/public/logo-banner.png" alt="NexusOps AI - Connect • Automate • Grow" width="480" />
+</div>
+
 NexusOps AI is an enterprise-grade internal operations and workflow platform. It unifies workforce management, service requests, multi-tier approval chains, compliance policy acknowledgments, IT asset tracking, leave calendars, expense claims, and knowledge retrieval powered by an AI assistant with source citations.
 
 ---

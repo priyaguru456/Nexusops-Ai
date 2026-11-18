@@ -75,14 +75,14 @@ export const LoginPage: React.FC = () => {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center h-12 w-12 rounded-xl bg-indigo-600 text-white font-bold text-xl shadow-lg shadow-indigo-500/20 mb-3">
-            N
+          <div className="inline-flex items-center justify-center h-16 w-16 rounded-2xl bg-slate-950 overflow-hidden shadow-xl shadow-indigo-500/20 border border-slate-800/80 mb-3 hover:scale-105 transition-transform">
+            <img src="/logo-icon.png" alt="NexusOps AI" className="h-full w-full object-cover" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
             NexusOps AI
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Enterprise Operations & Document Intelligence
+          <p className="text-sm font-medium bg-gradient-to-r from-indigo-500 via-purple-500 to-cyan-500 bg-clip-text text-transparent mt-1">
+            Connect • Automate • Grow
           </p>
         </div>
 

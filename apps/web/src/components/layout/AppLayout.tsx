@@ -222,9 +222,9 @@ export const AppLayout: React.FC = () => {
       {/* Mobile Header */}
       <header className="md:hidden flex items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3.5 py-2.5 sticky top-0 z-40 shadow-xs">
         <div className="flex items-center gap-2">
-          <Link to="/dashboard" className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-600 to-purple-600 text-white font-extrabold flex items-center justify-center text-sm shadow-md shadow-indigo-500/25">
-              N
+          <Link to="/dashboard" className="flex items-center gap-2.5 group">
+            <div className="h-8 w-8 rounded-xl bg-slate-950 flex items-center justify-center overflow-hidden shadow-md shadow-indigo-500/20 border border-slate-800/80 group-hover:scale-105 transition-transform shrink-0">
+              <img src="/logo-icon.png" alt="NexusOps AI" className="h-full w-full object-cover" />
             </div>
             <span className="font-extrabold text-base bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-200 bg-clip-text text-transparent">
               NexusOps
@@ -260,8 +260,8 @@ export const AppLayout: React.FC = () => {
         {/* Brand Header */}
         <div className="p-5 border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
           <Link to="/dashboard" className="flex items-center gap-3 group">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-600 to-purple-600 text-white font-extrabold flex items-center justify-center text-lg shadow-md shadow-indigo-500/25 group-hover:scale-105 transition-transform">
-              N
+            <div className="h-10 w-10 rounded-xl bg-slate-950 flex items-center justify-center overflow-hidden shadow-md shadow-indigo-500/25 border border-slate-800/80 group-hover:scale-105 transition-transform shrink-0">
+              <img src="/logo-icon.png" alt="NexusOps AI" className="h-full w-full object-cover" />
             </div>
             <div>
               <div className="flex items-center gap-1.5">

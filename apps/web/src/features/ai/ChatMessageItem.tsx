@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import {
-  Bot,
   User,
   ThumbsUp,
   ThumbsDown,
@@ -84,13 +83,17 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
     >
       {/* Bot Avatar */}
       <div
-        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-xs mt-0.5 ${
+        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-xs mt-0.5 overflow-hidden ${
           isNotFound
             ? "bg-amber-500 text-white"
-            : "bg-indigo-600 dark:bg-indigo-500 text-white"
+            : "bg-slate-950 text-white border border-slate-800/80"
         }`}
       >
-        {isNotFound ? <AlertTriangle className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+        {isNotFound ? (
+          <AlertTriangle className="w-4 h-4" />
+        ) : (
+          <img src="/logo-icon.png" alt="NexusOps AI" className="w-full h-full object-cover" />
+        )}
       </div>
 
       {/* Message Body */}

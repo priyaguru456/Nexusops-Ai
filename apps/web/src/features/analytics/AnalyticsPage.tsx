@@ -108,8 +108,8 @@ export const AnalyticsPage: React.FC = () => {
       <div className="print-only border-b-2 border-slate-900 pb-4 mb-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-indigo-600 text-white font-extrabold flex items-center justify-center text-lg">
-              N
+            <div className="h-10 w-10 rounded-xl bg-slate-950 flex items-center justify-center overflow-hidden border border-slate-800 shrink-0">
+              <img src="/logo-icon.png" alt="NexusOps AI" className="h-full w-full object-cover" />
             </div>
             <div>
               <h1 className="text-xl font-bold text-slate-900">NexusOps AI</h1>

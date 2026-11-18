@@ -1,7 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import {
-  Bot,
   Sparkles,
   FileText,
   Upload,
@@ -25,8 +24,8 @@ export const EmptyChatState: React.FC<EmptyChatStateProps> = ({
     <div className="flex-1 flex flex-col items-center justify-center p-6 text-center max-w-2xl mx-auto my-auto animate-in fade-in duration-300">
       {/* Icon Badge */}
       <div className="relative mb-5">
-        <div className="w-16 h-16 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25">
-          <Bot className="w-8 h-8" />
+        <div className="w-16 h-16 rounded-2xl bg-slate-950 flex items-center justify-center overflow-hidden shadow-xl shadow-indigo-500/25 border border-slate-800/80">
+          <img src="/logo-icon.png" alt="NexusOps AI" className="w-full h-full object-cover" />
         </div>
         <div className="absolute -bottom-1 -right-1 p-1.5 rounded-lg bg-emerald-500 text-white shadow-sm">
           <Sparkles className="w-3.5 h-3.5" />
